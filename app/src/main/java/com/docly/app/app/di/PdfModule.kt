@@ -1,0 +1,17 @@
+package com.docly.app.app.di
+
+import com.docly.app.core.pdf.NotImplementedPdfGenerator
+import com.docly.app.core.pdf.PdfGenerator
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class PdfModule {
+    @Binds
+    @Singleton
+    abstract fun bindPdfGenerator(impl: NotImplementedPdfGenerator): PdfGenerator
+}

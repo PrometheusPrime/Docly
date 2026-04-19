@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="docly_scan_green">#FF147A63</color>
+    <color name="docly_scan_green_dark">#FF0B4B3E</color>
+    <color name="docly_paper">#FFFAF8F2</color>
+    <color name="docly_ink">#FF17211F</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
