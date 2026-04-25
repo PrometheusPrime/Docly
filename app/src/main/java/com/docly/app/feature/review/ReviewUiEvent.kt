@@ -10,6 +10,7 @@ sealed interface ReviewUiEvent {
     data object OnResetToDetectedClicked : ReviewUiEvent
     data object OnResetToFullImageClicked : ReviewUiEvent
     data object OnReprocessClicked : ReviewUiEvent
+    data object OnToggleCropEditorClicked : ReviewUiEvent
     data object OnRotateClicked : ReviewUiEvent
     data object OnAcceptClicked : ReviewUiEvent
     data object OnRescanClicked : ReviewUiEvent

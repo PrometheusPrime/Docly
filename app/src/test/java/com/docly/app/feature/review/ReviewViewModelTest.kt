@@ -6,6 +6,7 @@ import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.ProcessedPageResult
 import com.docly.app.domain.model.SavedDocument
@@ -16,7 +17,10 @@ import com.docly.app.domain.model.ScannedPage
 import com.docly.app.domain.repository.FileRepository
 import com.docly.app.domain.repository.ImageProcessingRepository
 import com.docly.app.domain.repository.ScanRepository
+import com.docly.app.domain.usecase.page.AcceptReviewedPageUseCase
 import com.docly.app.domain.usecase.page.ApplyPageCropUseCase
+import com.docly.app.domain.usecase.page.DeletePageUseCase
+import com.docly.app.domain.usecase.page.RotatePageUseCase
 import com.docly.app.domain.usecase.session.GetScanSessionUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -71,6 +75,30 @@ class ReviewViewModelTest {
 
         assertEquals(fullImageCorners(imageWidth = 1000, imageHeight = 1400), viewModel.uiState.value.editableCorners)
         assertEquals(null, viewModel.uiState.value.detectedCorners)
+    }
+
+    @Test
+    fun loadSessionProcessesFirstPendingPage() = runTest {
+        val acceptedPage = samplePage(id = "accepted-page", pageIndex = 0, reviewStatus = PageReviewStatus.ACCEPTED)
+        val pendingPage = samplePage(
+            id = "pending-page",
+            pageIndex = 1,
+            corners = sampleCorners(),
+            reviewStatus = PageReviewStatus.PENDING
+        )
+        val scanRepository = FakeScanRepository(pages = listOf(acceptedPage, pendingPage))
+        val viewModel = viewModel(
+            scanRepository = scanRepository,
+            idProvider = FixedIdProvider("crop-1")
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("pending-page", state.currentPageId)
+        assertEquals("/processed/session-id/pending-page_crop-1.jpg", state.processedImagePath)
+        assertEquals(PageReviewStatus.PENDING, scanRepository.updatedPages.single().reviewStatus)
+        assertEquals(1, state.pendingPageCount)
+        assertEquals(1, state.acceptedPageCount)
     }
 
     @Test
@@ -223,6 +251,116 @@ class ReviewViewModelTest {
         assertEquals(null, viewModel.uiState.value.processedImagePath)
     }
 
+    @Test
+    fun toggleOriginalSwitchesPreviewState() = runTest {
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(
+                page = samplePage(
+                    corners = sampleCorners(),
+                    processedImagePath = "/processed/page.jpg",
+                    thumbnailPath = "/thumb/page.jpg"
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnToggleOriginalClicked)
+        assertTrue(viewModel.uiState.value.showOriginal)
+
+        viewModel.onEvent(ReviewUiEvent.OnToggleOriginalClicked)
+        assertFalse(viewModel.uiState.value.showOriginal)
+    }
+
+    @Test
+    fun rotatePersistsNextRotationAndUpdatesState() = runTest {
+        val scanRepository = FakeScanRepository(
+            page = samplePage(
+                corners = sampleCorners(),
+                processedImagePath = "/processed/page.jpg",
+                rotationDegrees = 270
+            )
+        )
+        val viewModel = viewModel(scanRepository = scanRepository)
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnRotateClicked)
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.rotationDegrees)
+        assertEquals(0, scanRepository.updatedPages.single().rotationDegrees)
+    }
+
+    @Test
+    fun acceptLoadsNextPendingPageWhenMoreReviewPagesExist() = runTest {
+        val firstPending = samplePage(
+            id = "first-pending",
+            pageIndex = 0,
+            corners = sampleCorners(),
+            processedImagePath = "/processed/first.jpg",
+            reviewStatus = PageReviewStatus.PENDING
+        )
+        val secondPending = samplePage(
+            id = "second-pending",
+            pageIndex = 1,
+            corners = sampleCorners(),
+            processedImagePath = "/processed/second.jpg",
+            reviewStatus = PageReviewStatus.PENDING
+        )
+        val scanRepository = FakeScanRepository(pages = listOf(firstPending, secondPending))
+        val viewModel = viewModel(scanRepository = scanRepository)
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnAcceptClicked)
+        advanceUntilIdle()
+
+        assertEquals("second-pending", viewModel.uiState.value.currentPageId)
+        assertEquals(PageReviewStatus.ACCEPTED, scanRepository.updatedPages.single().reviewStatus)
+        assertEquals(1, viewModel.uiState.value.pendingPageCount)
+        assertEquals(1, viewModel.uiState.value.acceptedPageCount)
+    }
+
+    @Test
+    fun acceptNavigatesToEditorWhenNoPendingPagesRemain() = runTest {
+        val scanRepository = FakeScanRepository(
+            page = samplePage(
+                corners = sampleCorners(),
+                processedImagePath = "/processed/page.jpg",
+                reviewStatus = PageReviewStatus.PENDING
+            )
+        )
+        val viewModel = viewModel(scanRepository = scanRepository)
+        advanceUntilIdle()
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(ReviewUiEvent.OnAcceptClicked)
+        advanceUntilIdle()
+
+        assertEquals(ReviewUiEffect.NavigateToEditor("session-id"), effect.await())
+        assertEquals(PageReviewStatus.ACCEPTED, scanRepository.updatedPages.single().reviewStatus)
+    }
+
+    @Test
+    fun rescanDeletesPendingPageAndNavigatesBackToScannerWhenNoPendingPagesRemain() = runTest {
+        val scanRepository = FakeScanRepository(
+            page = samplePage(
+                corners = sampleCorners(),
+                processedImagePath = "/processed/page.jpg",
+                reviewStatus = PageReviewStatus.PENDING
+            )
+        )
+        val viewModel = viewModel(scanRepository = scanRepository)
+        advanceUntilIdle()
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(ReviewUiEvent.OnRescanClicked)
+        advanceUntilIdle()
+
+        assertEquals(listOf("page-id"), scanRepository.deletedPageIds)
+        assertEquals(ReviewUiEffect.NavigateBackToScanner("session-id"), effect.await())
+    }
+
     private fun viewModel(
         scanRepository: FakeScanRepository = FakeScanRepository(page = samplePage(corners = sampleCorners())),
         imageProcessingRepository: FakeImageProcessingRepository = FakeImageProcessingRepository(),
@@ -236,7 +374,10 @@ class ReviewViewModelTest {
             imageProcessingRepository = imageProcessingRepository,
             fileRepository = fileRepository,
             idProvider = idProvider
-        )
+        ),
+        acceptReviewedPageUseCase = AcceptReviewedPageUseCase(scanRepository),
+        deletePageUseCase = DeletePageUseCase(scanRepository),
+        rotatePageUseCase = RotatePageUseCase(scanRepository)
     )
 
     private fun sampleSession(page: ScannedPage): ScanSession = ScanSession(
@@ -249,23 +390,28 @@ class ReviewViewModelTest {
     )
 
     private fun samplePage(
-        corners: PageCorners?,
+        id: String = "page-id",
+        pageIndex: Int = 0,
+        corners: PageCorners? = null,
         scanMode: ScanMode = ScanMode.DOCUMENT,
         processedImagePath: String? = null,
-        thumbnailPath: String? = null
+        thumbnailPath: String? = null,
+        rotationDegrees: Int = 0,
+        reviewStatus: PageReviewStatus = PageReviewStatus.ACCEPTED
     ): ScannedPage = ScannedPage(
-        id = "page-id",
+        id = id,
         sessionId = "session-id",
-        pageIndex = 0,
+        pageIndex = pageIndex,
         originalImagePath = "/raw/page.jpg",
         processedImagePath = processedImagePath,
         thumbnailPath = thumbnailPath,
-        rotationDegrees = 0,
+        rotationDegrees = rotationDegrees,
         scanMode = scanMode,
         width = 1000,
         height = 1400,
         corners = corners,
-        createdAt = 1L
+        createdAt = 1L,
+        reviewStatus = reviewStatus
     )
 
     private fun sampleCorners(): PageCorners = PageCorners(
@@ -276,11 +422,13 @@ class ReviewViewModelTest {
     )
 
     private inner class FakeScanRepository(
-        page: ScannedPage,
+        page: ScannedPage = samplePage(corners = sampleCorners()),
+        pages: List<ScannedPage> = listOf(page),
         private val updateResult: AppResult<Unit> = AppResult.Success(Unit)
     ) : ScanRepository {
-        private var session = sampleSession(page)
+        private var session = sampleSession(page).copy(pages = pages)
         val updatedPages: MutableList<ScannedPage> = mutableListOf()
+        val deletedPageIds: MutableList<String> = mutableListOf()
 
         override suspend fun createSession(scanMode: ScanMode): AppResult<ScanSession> = error("Not used in this test.")
 
@@ -298,12 +446,20 @@ class ReviewViewModelTest {
 
             is AppResult.Success -> {
                 updatedPages += page
-                session = session.copy(pages = listOf(page))
+                session = session.copy(
+                    pages = session.pages.map { existingPage ->
+                        if (existingPage.id == page.id) page else existingPage
+                    }
+                )
                 AppResult.Success(Unit)
             }
         }
 
-        override suspend fun deletePage(pageId: String): AppResult<Unit> = AppResult.Success(Unit)
+        override suspend fun deletePage(pageId: String): AppResult<Unit> {
+            deletedPageIds += pageId
+            session = session.copy(pages = session.pages.filterNot { page -> page.id == pageId })
+            return AppResult.Success(Unit)
+        }
 
         override suspend fun reorderPages(sessionId: String, orderedPageIds: List<String>): AppResult<Unit> =
             AppResult.Success(Unit)

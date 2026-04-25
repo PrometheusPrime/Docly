@@ -17,7 +17,8 @@ fun ScannedPageEntity.toDomain(): ScannedPage = ScannedPage(
     width = width,
     height = height,
     corners = toCornersOrNull(),
-    createdAt = createdAt
+    createdAt = createdAt,
+    reviewStatus = reviewStatus.toPageReviewStatus()
 )
 
 fun ScannedPage.toEntity(): ScannedPageEntity = ScannedPageEntity(
@@ -29,6 +30,7 @@ fun ScannedPage.toEntity(): ScannedPageEntity = ScannedPageEntity(
     thumbnailPath = thumbnailPath,
     rotationDegrees = rotationDegrees,
     scanMode = scanMode.name,
+    reviewStatus = reviewStatus.name,
     width = width,
     height = height,
     topLeftX = corners?.topLeft?.x,

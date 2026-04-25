@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
@@ -39,12 +41,12 @@ fun ReviewScreen(
         onNavigateBack = onNavigateBack
     ) {
         Text(
-            text = "Review pages",
+            text = "Review page",
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = "Session ID: ${uiState.sessionId}",
+            text = "${uiState.pendingPageCount} pending, ${uiState.acceptedPageCount} accepted",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -64,18 +66,22 @@ fun ReviewScreen(
         }
         ReviewPreview(uiState = uiState, onEvent = onEvent)
         if (uiState.currentPageId != null) {
+            ReviewPreviewActions(uiState = uiState, onEvent = onEvent)
             CropActions(uiState = uiState, onEvent = onEvent)
+            ReviewDecisionActions(uiState = uiState, onEvent = onEvent)
         } else {
             DoclyEmptyContent(
                 title = "Page preview pending",
                 message = "Captured or imported pages will appear here."
             )
         }
-        Button(
-            onClick = onEditPages,
-            modifier = Modifier.testTag(DoclyTestTags.REVIEW_EDITOR_ACTION)
-        ) {
-            Text(text = "Edit pages")
+        if (uiState.acceptedPageCount > 0) {
+            OutlinedButton(
+                onClick = onEditPages,
+                modifier = Modifier.testTag(DoclyTestTags.REVIEW_EDITOR_ACTION)
+            ) {
+                Text(text = "Edit accepted pages")
+            }
         }
     }
 }
@@ -99,16 +105,27 @@ private fun ReviewPreview(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Un
         return
     }
 
-    val previewPath = uiState.thumbnailPath
-        ?: uiState.processedImagePath
-        ?: uiState.rawImagePath.takeIf { path -> path.isNotBlank() }
+    val previewPath = if (uiState.showOriginal) {
+        uiState.rawImagePath.takeIf { path -> path.isNotBlank() }
+    } else {
+        uiState.processedImagePath
+            ?: uiState.thumbnailPath
+            ?: uiState.rawImagePath.takeIf { path -> path.isNotBlank() }
+    }
     if (previewPath != null) {
         DoclyImageThumbnail(
             imagePath = previewPath,
-            contentDescription = "Latest scanned page preview",
+            contentDescription = if (uiState.showOriginal) {
+                "Original page preview"
+            } else {
+                "Processed page preview"
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(260.dp),
+                .heightIn(min = 260.dp, max = 420.dp)
+                .graphicsLayer {
+                    rotationZ = uiState.rotationDegrees.toFloat()
+                },
             testTag = DoclyTestTags.REVIEW_PAGE_THUMBNAIL,
             contentScale = ContentScale.Fit
         )
@@ -116,7 +133,36 @@ private fun ReviewPreview(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Un
 }
 
 @Composable
+private fun ReviewPreviewActions(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        OutlinedButton(
+            onClick = { onEvent(ReviewUiEvent.OnToggleOriginalClicked) },
+            enabled = uiState.canToggleOriginal,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(DoclyTestTags.REVIEW_TOGGLE_ORIGINAL_ACTION)
+        ) {
+            Text(text = if (uiState.showOriginal) "Processed" else "Original")
+        }
+        OutlinedButton(
+            onClick = { onEvent(ReviewUiEvent.OnToggleCropEditorClicked) },
+            enabled = uiState.canAdjustCrop && !uiState.isProcessing && !uiState.isSaving,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(DoclyTestTags.REVIEW_TOGGLE_CROP_ACTION)
+        ) {
+            Text(text = if (uiState.isCropAdjustmentVisible) "Close crop" else "Adjust crop")
+        }
+    }
+}
+
+@Composable
 private fun CropActions(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Unit) {
+    if (!uiState.isCropAdjustmentVisible) return
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -151,10 +197,47 @@ private fun CropActions(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Unit
     }
 }
 
+@Composable
+private fun ReviewDecisionActions(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        OutlinedButton(
+            onClick = { onEvent(ReviewUiEvent.OnRotateClicked) },
+            enabled = uiState.canRotate,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(DoclyTestTags.REVIEW_ROTATE_ACTION)
+        ) {
+            Text(text = "Rotate")
+        }
+        OutlinedButton(
+            onClick = { onEvent(ReviewUiEvent.OnRescanClicked) },
+            enabled = uiState.canDiscardForRescan,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(DoclyTestTags.REVIEW_RESCAN_ACTION)
+        ) {
+            Text(text = "Rescan")
+        }
+    }
+    Button(
+        onClick = { onEvent(ReviewUiEvent.OnAcceptClicked) },
+        enabled = uiState.canAccept,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
+    ) {
+        Text(text = if (uiState.isSaving) "Saving..." else "Accept page")
+    }
+}
+
 private val ReviewUiState.applyActionLabel: String
     get() = when {
         isProcessing -> "Applying..."
         hasPendingScanModeChange -> "Apply mode"
+        hasPendingCropChange -> "Apply crop"
         else -> "Apply crop"
     }
 
@@ -170,7 +253,9 @@ private fun ReviewScreenPreview() {
                 imageWidth = 1000,
                 imageHeight = 1400,
                 detectedCorners = previewCorners(),
-                editableCorners = previewCorners()
+                appliedCorners = previewCorners(),
+                editableCorners = previewCorners(),
+                pendingPageCount = 1
             ),
             onEvent = {},
             onEditPages = {},

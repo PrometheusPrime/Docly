@@ -436,3 +436,34 @@ Validation:
 - `adb devices` reported one attached device: `1268015548000502`.
 - `./gradlew --no-daemon :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 58s`; 40 tests passed on `TECNO KL5 - 14`.
 - Final combined validation after cleanup hardening: `./gradlew --no-daemon :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 8m 1s`; 40 connected tests passed on `TECNO KL5 - 14`.
+
+## 2026-04-25 - Phase 19 Page Review Flow
+
+Scope:
+
+- Added explicit `PageReviewStatus` gating so captured/imported pages enter Room as `PENDING` and only accepted pages continue into the document editor.
+- Added Room schema version `2`, exported schema JSON, and migration `1 -> 2` with `reviewStatus TEXT NOT NULL DEFAULT 'ACCEPTED'` so pre-Phase-19 pages remain visible.
+- Added `AcceptReviewedPageUseCase` to validate processed output and persist reviewed pages as `ACCEPTED`.
+- Expanded `ReviewViewModel` to select the first pending page, auto-process unprocessed pending pages, apply crop/mode changes, rotate, compare original/processed previews, accept pages, and discard pending pages for rescan.
+- Updated `ReviewScreen` with explicit compare, crop, rotate, rescan, and accept controls.
+- Updated `EditorViewModel` to show only accepted pages.
+
+Implementation decisions:
+
+- Reject/rescan deletes only pending pages; accepted fallback pages are left intact and navigate back to scanner.
+- Rotation remains metadata-only through `rotationDegrees`; image rewriting remains deferred to export/PDF behavior if needed.
+- Auto-processing uses existing page processing use cases and keeps OpenCV/file work out of the ViewModel.
+- Review accept is disabled while processing/saving, while processed output is missing, or while crop/mode changes are unapplied.
+
+Tests:
+
+- Added JVM coverage for `AcceptReviewedPageUseCase`, `EditorViewModel` accepted-page filtering, capture/import pending status, and expanded review state transitions.
+- Expanded mapper and Room instrumentation coverage for `reviewStatus` round-tripping, migration defaulting, and repository persistence.
+- Expanded Review Compose tests for compare/crop/rotate/rescan/accept controls and accept disabled states.
+
+Validation:
+
+- `./gradlew --no-daemon :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 1m 31s`.
+- `adb devices` reported one attached device: `1268015548000502`.
+- `./gradlew --no-daemon :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 2m 11s`; 44 tests passed on `TECNO KL5 - 14`.
+- An earlier full connected run hit a transient Hilt test-application process-state crash while entering non-Hilt Room tests; `RoomRepositoryTest` passed in isolation, then the full connected suite passed after force-stopping the app/test processes.

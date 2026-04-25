@@ -9,6 +9,7 @@ import com.docly.app.core.time.TimeProvider
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.ImportedRawImage
 import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.ProcessedPageResult
 import com.docly.app.domain.model.SavedDocument
@@ -74,6 +75,7 @@ class ImportDevicePhotosUseCaseTest {
         assertEquals("/thumb/created-session/page-1.jpg", importedPages.first().thumbnailPath)
         assertEquals(100, importedPages.first().width)
         assertEquals(200, importedPages.first().height)
+        assertEquals(PageReviewStatus.PENDING, importedPages.first().reviewStatus)
     }
 
     @Test

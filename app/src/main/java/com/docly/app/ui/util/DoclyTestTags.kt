@@ -36,6 +36,11 @@ object DoclyTestTags {
     const val REVIEW_RESET_DETECTED_ACTION = "review_reset_detected_action"
     const val REVIEW_RESET_FULL_IMAGE_ACTION = "review_reset_full_image_action"
     const val REVIEW_APPLY_CROP_ACTION = "review_apply_crop_action"
+    const val REVIEW_TOGGLE_ORIGINAL_ACTION = "review_toggle_original_action"
+    const val REVIEW_TOGGLE_CROP_ACTION = "review_toggle_crop_action"
+    const val REVIEW_ROTATE_ACTION = "review_rotate_action"
+    const val REVIEW_ACCEPT_ACTION = "review_accept_action"
+    const val REVIEW_RESCAN_ACTION = "review_rescan_action"
     const val EDITOR_PAGE_THUMBNAIL = "editor_page_thumbnail"
     const val LIBRARY_DOCUMENT_THUMBNAIL = "library_document_thumbnail"
 

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.toUserMessage
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.usecase.page.DeletePageUseCase
 import com.docly.app.domain.usecase.page.ReorderPagesUseCase
 import com.docly.app.domain.usecase.page.RotatePageUseCase
@@ -59,7 +60,9 @@ class EditorViewModel @Inject constructor(
                 is AppResult.Success -> _uiState.update { state ->
                     val session = result.data
                     state.copy(
-                        pages = session?.pages.orEmpty().sortedBy { page -> page.pageIndex },
+                        pages = session?.pages.orEmpty()
+                            .filter { page -> page.reviewStatus == PageReviewStatus.ACCEPTED }
+                            .sortedBy { page -> page.pageIndex },
                         isLoading = false,
                         errorMessage = if (session == null) "Scan session not found." else null
                     )

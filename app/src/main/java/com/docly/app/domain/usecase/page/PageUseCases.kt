@@ -8,6 +8,7 @@ import com.docly.app.core.time.TimeProvider
 import com.docly.app.domain.model.CapturePageResult
 import com.docly.app.domain.model.ImportDevicePhotosResult
 import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.ProcessedPageResult
 import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
@@ -79,7 +80,8 @@ class CapturePageUseCase @Inject constructor(
             width = captureResult.width,
             height = captureResult.height,
             corners = detectedCorners,
-            createdAt = timeProvider.now()
+            createdAt = timeProvider.now(),
+            reviewStatus = PageReviewStatus.PENDING
         )
 
         return when (val addPageResult = scanRepository.addPage(page)) {
@@ -289,7 +291,8 @@ class ImportDevicePhotosUseCase @Inject constructor(
                 width = importedRawImage.width,
                 height = importedRawImage.height,
                 corners = detectedCorners,
-                createdAt = timeProvider.now()
+                createdAt = timeProvider.now(),
+                reviewStatus = PageReviewStatus.PENDING
             )
 
             when (val addPageResult = scanRepository.addPage(page)) {
@@ -361,6 +364,27 @@ private suspend fun resolveInProgressSession(
 
 class UpdatePageUseCase @Inject constructor(private val scanRepository: ScanRepository) {
     suspend operator fun invoke(page: ScannedPage): AppResult<Unit> = scanRepository.updatePage(page)
+}
+
+class AcceptReviewedPageUseCase @Inject constructor(private val scanRepository: ScanRepository) {
+    suspend operator fun invoke(page: ScannedPage): AppResult<ScannedPage> {
+        if (page.reviewStatus == PageReviewStatus.ACCEPTED) {
+            return AppResult.Success(page)
+        }
+
+        if (page.processedImagePath.isNullOrBlank()) {
+            return AppResult.Error(
+                message = "Process this page before accepting it.",
+                category = AppErrorCategory.VALIDATION
+            )
+        }
+
+        val acceptedPage = page.copy(reviewStatus = PageReviewStatus.ACCEPTED)
+        return when (val updateResult = scanRepository.updatePage(acceptedPage)) {
+            is AppResult.Error -> updateResult
+            is AppResult.Success -> AppResult.Success(acceptedPage)
+        }
+    }
 }
 
 class DeletePageUseCase @Inject constructor(private val scanRepository: ScanRepository) {

@@ -19,6 +19,7 @@ import com.docly.app.data.local.entity.ScannedPageEntity
 import com.docly.app.data.repository.DocumentRepositoryImpl
 import com.docly.app.data.repository.ScanRepositoryImpl
 import com.docly.app.domain.model.DocumentMetadata
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
@@ -64,7 +65,7 @@ class RoomRepositoryTest {
     }
 
     @Test
-    fun schemaVersion1OpensWithCurrentMigrationPolicy() {
+    fun schemaVersion1MigratesToVersion2WithAcceptedReviewStatusDefault() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase(TEST_DATABASE_NAME)
 
@@ -73,24 +74,55 @@ class RoomRepositoryTest {
                 .use { cursor ->
                     assertTrue(cursor.moveToFirst())
                 }
+            createdDatabase.execSQL(
+                """
+                INSERT INTO scan_sessions (
+                    id, createdAt, updatedAt, status, scanMode,
+                    grade, subject, year, paperType, paperNumber, source, notes
+                ) VALUES (
+                    'session-id', 1, 1, 'IN_PROGRESS', 'DOCUMENT',
+                    NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                )
+                """.trimIndent()
+            )
+            createdDatabase.execSQL(
+                """
+                INSERT INTO scanned_pages (
+                    id, sessionId, pageIndex, originalImagePath, processedImagePath, thumbnailPath,
+                    rotationDegrees, scanMode, width, height,
+                    topLeftX, topLeftY, topRightX, topRightY,
+                    bottomRightX, bottomRightY, bottomLeftX, bottomLeftY, createdAt
+                ) VALUES (
+                    'page-id', 'session-id', 0, '/raw/page.jpg', '/processed/page.jpg', '/thumb/page.jpg',
+                    0, 'DOCUMENT', 100, 200,
+                    NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL, NULL, 1
+                )
+                """.trimIndent()
+            )
         }
 
-        migrationHelper.runMigrationsAndValidate(
+        val migratedDatabase = migrationHelper.runMigrationsAndValidate(
             TEST_DATABASE_NAME,
-            1,
+            2,
             true,
             *RoomMigrations.ALL
-        ).close()
+        )
+        migratedDatabase.query("SELECT reviewStatus FROM scanned_pages WHERE id = 'page-id'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(PageReviewStatus.ACCEPTED.name, cursor.getString(0))
+        }
+        migratedDatabase.close()
 
-        val migratedDatabase = Room.databaseBuilder(
+        val roomDatabase = Room.databaseBuilder(
             context,
             AppDatabase::class.java,
             TEST_DATABASE_NAME
         ).addMigrations(*RoomMigrations.ALL)
             .build()
 
-        migratedDatabase.openHelper.writableDatabase.close()
-        migratedDatabase.close()
+        roomDatabase.openHelper.writableDatabase.close()
+        roomDatabase.close()
     }
 
     @Test
@@ -202,6 +234,7 @@ class RoomRepositoryTest {
         val loadedAfterPageUpdate = repository.getSession(session.id).successData()
         assertEquals(180, loadedAfterPageUpdate?.pages?.single()?.rotationDegrees)
         assertEquals("/processed/page-id.jpg", loadedAfterPageUpdate?.pages?.single()?.processedImagePath)
+        assertEquals(PageReviewStatus.ACCEPTED, loadedAfterPageUpdate?.pages?.single()?.reviewStatus)
 
         repository.deletePage("page-id").assertSuccess()
         assertTrue(repository.getSession(session.id).successData()?.pages?.isEmpty() == true)
@@ -364,6 +397,7 @@ class RoomRepositoryTest {
         thumbnailPath = null,
         rotationDegrees = 0,
         scanMode = ScanMode.DOCUMENT.name,
+        reviewStatus = PageReviewStatus.ACCEPTED.name,
         width = 100,
         height = 200,
         topLeftX = null,

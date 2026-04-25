@@ -4,6 +4,7 @@ import com.docly.app.data.local.entity.SavedDocumentEntity
 import com.docly.app.data.local.entity.ScanSessionEntity
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanMode
@@ -72,6 +73,7 @@ class MapperTest {
     @Test
     fun scannedPageMapperRoundTripsCorners() {
         val page = scannedPage(
+            reviewStatus = PageReviewStatus.PENDING,
             corners = PageCorners(
                 topLeft = PointFSerializable(1f, 2f),
                 topRight = PointFSerializable(3f, 4f),
@@ -167,21 +169,26 @@ class MapperTest {
         notes = notes
     )
 
-    private fun scannedPage(id: String = "page-id", pageIndex: Int = 0, corners: PageCorners? = null): ScannedPage =
-        ScannedPage(
-            id = id,
-            sessionId = "session-id",
-            pageIndex = pageIndex,
-            originalImagePath = "/$id/raw.jpg",
-            processedImagePath = "/$id/processed.jpg",
-            thumbnailPath = "/$id/thumb.jpg",
-            rotationDegrees = 90,
-            scanMode = ScanMode.MIXED,
-            width = 100,
-            height = 200,
-            corners = corners,
-            createdAt = 3L
-        )
+    private fun scannedPage(
+        id: String = "page-id",
+        pageIndex: Int = 0,
+        reviewStatus: PageReviewStatus = PageReviewStatus.ACCEPTED,
+        corners: PageCorners? = null
+    ): ScannedPage = ScannedPage(
+        id = id,
+        sessionId = "session-id",
+        pageIndex = pageIndex,
+        originalImagePath = "/$id/raw.jpg",
+        processedImagePath = "/$id/processed.jpg",
+        thumbnailPath = "/$id/thumb.jpg",
+        rotationDegrees = 90,
+        scanMode = ScanMode.MIXED,
+        width = 100,
+        height = 200,
+        corners = corners,
+        createdAt = 3L,
+        reviewStatus = reviewStatus
+    )
 
     private fun savedDocumentEntity(
         thumbnailPath: String? = "/thumb.jpg",

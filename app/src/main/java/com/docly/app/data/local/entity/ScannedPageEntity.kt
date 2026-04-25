@@ -26,6 +26,7 @@ data class ScannedPageEntity(
     val thumbnailPath: String?,
     val rotationDegrees: Int,
     val scanMode: String,
+    val reviewStatus: String,
     val width: Int,
     val height: Int,
     val topLeftX: Float?,

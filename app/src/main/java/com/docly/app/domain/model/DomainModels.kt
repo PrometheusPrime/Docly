@@ -22,7 +22,8 @@ data class ScannedPage(
     val width: Int,
     val height: Int,
     val corners: PageCorners? = null,
-    val createdAt: Long
+    val createdAt: Long,
+    val reviewStatus: PageReviewStatus = PageReviewStatus.ACCEPTED
 )
 
 data class DocumentMetadata(
@@ -59,6 +60,11 @@ enum class ScanMode {
     DOCUMENT,
     MIXED,
     COLOR
+}
+
+enum class PageReviewStatus {
+    PENDING,
+    ACCEPTED
 }
 
 enum class ScanSessionStatus {

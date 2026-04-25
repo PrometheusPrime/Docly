@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.docly.app.domain.model.PageCorners
@@ -98,6 +99,96 @@ class ReviewScreenStateTest {
     }
 
     @Test
+    fun reviewActionsReflectAcceptAvailability() {
+        renderReviewContent(
+            uiState = cropUiState(
+                processedImagePath = "/processed/page.jpg",
+                isCropAdjustmentVisible = false
+            )
+        )
+
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_TOGGLE_ORIGINAL_ACTION).assertIsEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_TOGGLE_CROP_ACTION).assertIsEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ROTATE_ACTION).assertIsEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESCAN_ACTION).assertIsEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION).assertIsEnabled()
+    }
+
+    @Test
+    fun acceptIsDisabledWhenProcessedImageIsMissing() {
+        renderReviewContent(
+            uiState = cropUiState(
+                processedImagePath = null,
+                isCropAdjustmentVisible = false
+            )
+        )
+
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun acceptIsDisabledWhenModeIsPending() {
+        renderReviewContent(
+            uiState = cropUiState(
+                processedImagePath = "/processed/page.jpg",
+                selectedScanMode = ScanMode.COLOR,
+                appliedScanMode = ScanMode.DOCUMENT,
+                isCropAdjustmentVisible = false
+            )
+        )
+
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun reviewActionClicksDispatchEvents() {
+        val receivedEvents = mutableListOf<ReviewUiEvent>()
+
+        composeRule.setContent {
+            DoclyTheme {
+                ReviewScreen(
+                    uiState = cropUiState(
+                        processedImagePath = "/processed/page.jpg",
+                        isCropAdjustmentVisible = false
+                    ),
+                    onEvent = { event -> receivedEvents += event },
+                    onEditPages = {},
+                    onNavigateBack = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_TOGGLE_ORIGINAL_ACTION).performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_TOGGLE_CROP_ACTION).performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ROTATE_ACTION)
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESCAN_ACTION)
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
+            .performScrollTo()
+            .performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    ReviewUiEvent.OnToggleOriginalClicked,
+                    ReviewUiEvent.OnToggleCropEditorClicked,
+                    ReviewUiEvent.OnRotateClicked,
+                    ReviewUiEvent.OnRescanClicked,
+                    ReviewUiEvent.OnAcceptClicked
+                ),
+                receivedEvents
+            )
+        }
+    }
+
+    @Test
     fun draggingCornerHandleDispatchesChangedCorners() {
         val initialCorners = sampleCorners()
         var changedCorners: PageCorners? = null
@@ -155,20 +246,25 @@ class ReviewScreenStateTest {
     private fun cropUiState(
         detectedCorners: PageCorners? = sampleCorners(),
         editableCorners: PageCorners? = sampleCorners(),
+        processedImagePath: String? = null,
         isProcessing: Boolean = false,
         selectedScanMode: ScanMode = ScanMode.DOCUMENT,
-        appliedScanMode: ScanMode = ScanMode.DOCUMENT
+        appliedScanMode: ScanMode = ScanMode.DOCUMENT,
+        isCropAdjustmentVisible: Boolean = true
     ): ReviewUiState = ReviewUiState(
         sessionId = "session-id",
         currentPageId = "page-id",
         rawImagePath = "/raw/page.jpg",
+        processedImagePath = processedImagePath,
         imageWidth = 1000,
         imageHeight = 1400,
         selectedScanMode = selectedScanMode,
         appliedScanMode = appliedScanMode,
         detectedCorners = detectedCorners,
+        appliedCorners = editableCorners,
         editableCorners = editableCorners,
-        isProcessing = isProcessing
+        isProcessing = isProcessing,
+        isCropAdjustmentVisible = isCropAdjustmentVisible
     )
 
     private fun sampleCorners(): PageCorners = PageCorners(

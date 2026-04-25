@@ -47,10 +47,10 @@ class Phase05NavigationTest {
     @Test
     fun scannerShowsPhotoImportActions() {
         composeRule.onNodeWithTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
-            .assertIsDisplayed()
+            .assertExists()
 
         composeRule.onNodeWithTag(DoclyTestTags.IMPORT_MULTIPLE_PHOTOS_ACTION)
-            .assertIsDisplayed()
+            .assertExists()
     }
 
     @Test

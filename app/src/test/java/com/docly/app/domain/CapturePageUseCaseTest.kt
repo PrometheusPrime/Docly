@@ -9,6 +9,7 @@ import com.docly.app.core.result.getOrNull
 import com.docly.app.core.time.TimeProvider
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.ProcessedPageResult
 import com.docly.app.domain.model.SavedDocument
@@ -58,6 +59,7 @@ class CapturePageUseCaseTest {
         assertEquals(1000, page?.width)
         assertEquals(1500, page?.height)
         assertEquals(123L, page?.createdAt)
+        assertEquals(PageReviewStatus.PENDING, page?.reviewStatus)
         assertEquals(listOf("page-1"), scanRepository.addedPages.map { it.id })
     }
 

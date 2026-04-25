@@ -15,7 +15,7 @@ import com.docly.app.data.local.entity.ScannedPageEntity
         ScannedPageEntity::class,
         SavedDocumentEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
