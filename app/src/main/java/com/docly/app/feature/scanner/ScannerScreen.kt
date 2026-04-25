@@ -11,6 +11,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,12 +40,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
@@ -53,18 +58,20 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.docly.app.app.di.CameraPreviewBinderEntryPoint
 import com.docly.app.core.camera.CameraPreviewBinder
-import com.docly.app.core.camera.CameraXPreviewBinder
+import com.docly.app.core.camera.CameraPreviewSession
+import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.ui.components.DoclyEmptyContent
 import com.docly.app.ui.components.DoclyScreenScaffold
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
+import dagger.hilt.android.EntryPointAccessors
 
 @Composable
 fun ScannerScreen(
     uiState: ScannerUiState,
     onEvent: (ScannerUiEvent) -> Unit,
-    onReviewPlaceholderSession: () -> Unit,
     onOpenLibrary: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -74,8 +81,12 @@ fun ScannerScreen(
     val currentOnEvent by rememberUpdatedState(onEvent)
     val currentActivity by rememberUpdatedState(context.findActivity())
     val cameraPreviewBinder: CameraPreviewBinder = remember(context.applicationContext) {
-        CameraXPreviewBinder(context.applicationContext)
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            CameraPreviewBinderEntryPoint::class.java
+        ).cameraPreviewBinder()
     }
+    var previewSession: CameraPreviewSession? by remember { mutableStateOf(null) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -156,7 +167,6 @@ fun ScannerScreen(
     ScannerScreenContent(
         uiState = uiState,
         onEvent = onEvent,
-        onReviewPlaceholderSession = onReviewPlaceholderSession,
         onOpenLibrary = onOpenLibrary,
         onRequestCameraPermission = {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -164,6 +174,17 @@ fun ScannerScreen(
         onOpenCameraSettings = ::openAppSettings,
         onImportSinglePhoto = ::launchSinglePhotoPicker,
         onImportMultiplePhotos = ::launchMultiplePhotoPicker,
+        isCaptureAvailable = previewSession != null,
+        onCapture = capture@{
+            val activeSession = previewSession ?: return@capture
+            onEvent(
+                ScannerUiEvent.OnCaptureClicked(
+                    ScannerCaptureAction { outputPath ->
+                        activeSession.captureToFile(outputPath)
+                    }
+                )
+            )
+        },
         cameraPreview = {
             CameraPreviewView(
                 cameraPreviewBinder = cameraPreviewBinder,
@@ -177,6 +198,12 @@ fun ScannerScreen(
                 onFlashAvailabilityChanged = { available ->
                     onEvent(ScannerUiEvent.OnFlashAvailabilityChanged(available))
                 },
+                onPreviewSessionChanged = { session ->
+                    previewSession = session
+                },
+                onDocumentBoundaryChanged = { boundary ->
+                    onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(boundary))
+                },
                 modifier = Modifier.fillMaxSize()
             )
         },
@@ -188,12 +215,13 @@ fun ScannerScreen(
 fun ScannerScreenContent(
     uiState: ScannerUiState,
     onEvent: (ScannerUiEvent) -> Unit,
-    onReviewPlaceholderSession: () -> Unit,
     onOpenLibrary: () -> Unit,
     onRequestCameraPermission: () -> Unit,
     onOpenCameraSettings: () -> Unit,
     onImportSinglePhoto: () -> Unit,
     onImportMultiplePhotos: () -> Unit,
+    isCaptureAvailable: Boolean,
+    onCapture: () -> Unit,
     cameraPreview: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -231,7 +259,11 @@ fun ScannerScreenContent(
         )
         ScannerCaptureControls(
             uiState = uiState,
-            onEvent = onEvent
+            isCaptureAvailable = isCaptureAvailable,
+            onCapture = onCapture,
+            onFlashToggle = {
+                onEvent(ScannerUiEvent.OnFlashToggleClicked)
+            }
         )
         ImportActions(
             uiState = uiState,
@@ -245,13 +277,6 @@ fun ScannerScreenContent(
                 color = MaterialTheme.colorScheme.error
             )
         }
-        Button(
-            onClick = onReviewPlaceholderSession,
-            modifier = Modifier.testTag(DoclyTestTags.SCANNER_REVIEW_ACTION)
-        ) {
-            Text(text = "Review capture")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
         DoclyEmptyContent(
             title = "No pages yet",
             message = "Captured and imported pages will appear here.",
@@ -271,6 +296,7 @@ private fun CameraPermissionAndPreviewSection(
     when (uiState.cameraPermissionStatus) {
         CameraPermissionStatus.Granted -> CameraPreviewPanel(
             isCameraReady = uiState.isCameraReady,
+            previewBoundary = uiState.previewBoundary,
             cameraPreview = cameraPreview
         )
 
@@ -301,7 +327,11 @@ private fun CameraPermissionAndPreviewSection(
 }
 
 @Composable
-private fun CameraPreviewPanel(isCameraReady: Boolean, cameraPreview: @Composable () -> Unit) {
+private fun CameraPreviewPanel(
+    isCameraReady: Boolean,
+    previewBoundary: PreviewDocumentBoundary?,
+    cameraPreview: @Composable () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -312,6 +342,7 @@ private fun CameraPreviewPanel(isCameraReady: Boolean, cameraPreview: @Composabl
         contentAlignment = Alignment.Center
     ) {
         cameraPreview()
+        DocumentBoundaryOverlay(previewBoundary = previewBoundary)
         if (!isCameraReady) {
             Text(
                 text = "Starting camera...",
@@ -319,6 +350,42 @@ private fun CameraPreviewPanel(isCameraReady: Boolean, cameraPreview: @Composabl
                 color = Color.White
             )
         }
+    }
+}
+
+@Composable
+private fun DocumentBoundaryOverlay(previewBoundary: PreviewDocumentBoundary?) {
+    if (previewBoundary == null) return
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(DoclyTestTags.DOCUMENT_BOUNDARY_OVERLAY)
+    ) {
+        val imageWidth = previewBoundary.imageWidth.toFloat()
+        val imageHeight = previewBoundary.imageHeight.toFloat()
+        if (imageWidth <= 0f || imageHeight <= 0f) return@Canvas
+
+        val scale = maxOf(size.width / imageWidth, size.height / imageHeight)
+        val horizontalOffset = (size.width - imageWidth * scale) / 2f
+        val verticalOffset = (size.height - imageHeight * scale) / 2f
+
+        fun mapX(x: Float): Float = x * scale + horizontalOffset
+        fun mapY(y: Float): Float = y * scale + verticalOffset
+
+        val corners = previewBoundary.corners
+        val path = Path().apply {
+            moveTo(mapX(corners.topLeft.x), mapY(corners.topLeft.y))
+            lineTo(mapX(corners.topRight.x), mapY(corners.topRight.y))
+            lineTo(mapX(corners.bottomRight.x), mapY(corners.bottomRight.y))
+            lineTo(mapX(corners.bottomLeft.x), mapY(corners.bottomLeft.y))
+            close()
+        }
+        drawPath(
+            path = path,
+            color = Color(0xFF69D6C5),
+            style = Stroke(width = 4.dp.toPx())
+        )
     }
 }
 
@@ -356,7 +423,12 @@ private fun CameraPermissionMessage(
 }
 
 @Composable
-private fun ScannerCaptureControls(uiState: ScannerUiState, onEvent: (ScannerUiEvent) -> Unit) {
+private fun ScannerCaptureControls(
+    uiState: ScannerUiState,
+    isCaptureAvailable: Boolean,
+    onCapture: () -> Unit,
+    onFlashToggle: () -> Unit
+) {
     if (!uiState.isCameraPermissionGranted) return
 
     Row(
@@ -365,10 +437,8 @@ private fun ScannerCaptureControls(uiState: ScannerUiState, onEvent: (ScannerUiE
         verticalAlignment = Alignment.CenterVertically
     ) {
         Button(
-            onClick = {
-                onEvent(ScannerUiEvent.OnCaptureClicked)
-            },
-            enabled = uiState.isCameraReady && !uiState.isCapturing,
+            onClick = onCapture,
+            enabled = uiState.isCameraReady && isCaptureAvailable && !uiState.isCapturing && !uiState.isImporting,
             modifier = Modifier.testTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
         ) {
             Text(text = if (uiState.isCapturing) "Capturing..." else "Capture")
@@ -387,9 +457,7 @@ private fun ScannerCaptureControls(uiState: ScannerUiState, onEvent: (ScannerUiE
                 Switch(
                     checked = uiState.isFlashEnabled,
                     enabled = uiState.isCameraReady,
-                    onCheckedChange = {
-                        onEvent(ScannerUiEvent.OnFlashToggleClicked)
-                    }
+                    onCheckedChange = { onFlashToggle() }
                 )
             }
         }
@@ -404,7 +472,7 @@ private fun ImportActions(
 ) {
     Button(
         onClick = onImportSinglePhoto,
-        enabled = !uiState.isImporting,
+        enabled = !uiState.isImporting && !uiState.isCapturing,
         modifier = Modifier.testTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
     ) {
         Icon(imageVector = Icons.Filled.Add, contentDescription = null)
@@ -413,7 +481,7 @@ private fun ImportActions(
     }
     OutlinedButton(
         onClick = onImportMultiplePhotos,
-        enabled = !uiState.isImporting,
+        enabled = !uiState.isImporting && !uiState.isCapturing,
         modifier = Modifier.testTag(DoclyTestTags.IMPORT_MULTIPLE_PHOTOS_ACTION)
     ) {
         Icon(imageVector = Icons.Filled.Add, contentDescription = null)
@@ -440,12 +508,13 @@ private fun ScannerScreenPreview() {
         ScannerScreenContent(
             uiState = ScannerUiState(),
             onEvent = {},
-            onReviewPlaceholderSession = {},
             onOpenLibrary = {},
             onRequestCameraPermission = {},
             onOpenCameraSettings = {},
             onImportSinglePhoto = {},
             onImportMultiplePhotos = {},
+            isCaptureAvailable = false,
+            onCapture = {},
             cameraPreview = {}
         )
     }

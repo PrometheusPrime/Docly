@@ -1,11 +1,15 @@
 package com.docly.app.app.di
 
+import com.docly.app.core.image.AndroidBitmapLoader
+import com.docly.app.core.image.AndroidThumbnailGenerator
+import com.docly.app.core.image.BitmapLoader
+import com.docly.app.core.image.DefaultOpenCvInitializer
 import com.docly.app.core.image.DocumentDetector
 import com.docly.app.core.image.ImageEnhancer
-import com.docly.app.core.image.NotImplementedDocumentDetector
 import com.docly.app.core.image.NotImplementedImageEnhancer
-import com.docly.app.core.image.NotImplementedPerspectiveTransformer
-import com.docly.app.core.image.NotImplementedThumbnailGenerator
+import com.docly.app.core.image.OpenCvDocumentDetector
+import com.docly.app.core.image.OpenCvInitializer
+import com.docly.app.core.image.OpenCvPerspectiveTransformer
 import com.docly.app.core.image.PerspectiveTransformer
 import com.docly.app.core.image.ThumbnailGenerator
 import dagger.Binds
@@ -19,11 +23,19 @@ import javax.inject.Singleton
 abstract class ImageProcessingModule {
     @Binds
     @Singleton
-    abstract fun bindDocumentDetector(impl: NotImplementedDocumentDetector): DocumentDetector
+    abstract fun bindBitmapLoader(impl: AndroidBitmapLoader): BitmapLoader
 
     @Binds
     @Singleton
-    abstract fun bindPerspectiveTransformer(impl: NotImplementedPerspectiveTransformer): PerspectiveTransformer
+    abstract fun bindOpenCvInitializer(impl: DefaultOpenCvInitializer): OpenCvInitializer
+
+    @Binds
+    @Singleton
+    abstract fun bindDocumentDetector(impl: OpenCvDocumentDetector): DocumentDetector
+
+    @Binds
+    @Singleton
+    abstract fun bindPerspectiveTransformer(impl: OpenCvPerspectiveTransformer): PerspectiveTransformer
 
     @Binds
     @Singleton
@@ -31,5 +43,5 @@ abstract class ImageProcessingModule {
 
     @Binds
     @Singleton
-    abstract fun bindThumbnailGenerator(impl: NotImplementedThumbnailGenerator): ThumbnailGenerator
+    abstract fun bindThumbnailGenerator(impl: AndroidThumbnailGenerator): ThumbnailGenerator
 }

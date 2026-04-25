@@ -1,9 +1,11 @@
 package com.docly.app.domain.usecase.page
 
+import com.docly.app.core.camera.CameraCaptureResult
 import com.docly.app.core.common.IdProvider
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
+import com.docly.app.domain.model.CapturePageResult
 import com.docly.app.domain.model.ImportDevicePhotosResult
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.ProcessedPageResult
@@ -18,11 +20,103 @@ import com.docly.app.domain.repository.ScanRepository
 import com.docly.app.domain.repository.StorageReserveBytes
 import javax.inject.Inject
 
-class CapturePageUseCase @Inject constructor() {
-    suspend operator fun invoke(sessionId: String, scanMode: ScanMode): AppResult<String> = AppResult.Error(
-        message = "Camera capture is not implemented yet.",
-        category = AppErrorCategory.CAMERA
-    )
+class CapturePageUseCase @Inject constructor(
+    private val scanRepository: ScanRepository,
+    private val fileRepository: FileRepository,
+    private val imageProcessingRepository: ImageProcessingRepository,
+    private val idProvider: IdProvider,
+    private val timeProvider: TimeProvider
+) {
+    suspend operator fun invoke(
+        sessionId: String?,
+        scanMode: ScanMode,
+        captureToFile: suspend (outputPath: String) -> AppResult<CameraCaptureResult>
+    ): AppResult<CapturePageResult> {
+        when (val storageResult = fileRepository.ensureStorageAvailable(StorageReserveBytes.CAPTURE_BYTES)) {
+            is AppResult.Error -> return storageResult
+            is AppResult.Success -> Unit
+        }
+
+        val session = when (val sessionResult = resolveInProgressSession(scanRepository, sessionId, scanMode)) {
+            is AppResult.Error -> return sessionResult
+            is AppResult.Success -> sessionResult.data
+        }
+
+        val pageId = idProvider.generateId()
+        val rawImagePath = fileRepository.createSessionImagePath(sessionId = session.id, suffix = pageId)
+        val captureResult = when (val result = captureSafely(rawImagePath, captureToFile)) {
+            is AppResult.Error -> {
+                fileRepository.deleteFile(rawImagePath)
+                return result
+            }
+
+            is AppResult.Success -> result.data
+        }
+        val thumbnailPath = fileRepository.createThumbnailPath(sessionId = session.id, suffix = pageId)
+        val generatedThumbnailPath = when (
+            val thumbnailResult = imageProcessingRepository.generateThumbnail(
+                inputPath = captureResult.path,
+                outputPath = thumbnailPath
+            )
+        ) {
+            is AppResult.Error -> {
+                fileRepository.deleteFiles(listOf(captureResult.path, thumbnailPath))
+                return thumbnailResult
+            }
+
+            is AppResult.Success -> thumbnailResult.data
+        }
+        val detectedCorners = detectCornersRecoverably(captureResult.path)
+        val page = ScannedPage(
+            id = pageId,
+            sessionId = session.id,
+            pageIndex = session.pages.maxOfOrNull { page -> page.pageIndex }?.plus(1) ?: 0,
+            originalImagePath = captureResult.path,
+            processedImagePath = null,
+            thumbnailPath = generatedThumbnailPath,
+            rotationDegrees = 0,
+            scanMode = scanMode,
+            width = captureResult.width,
+            height = captureResult.height,
+            corners = detectedCorners,
+            createdAt = timeProvider.now()
+        )
+
+        return when (val addPageResult = scanRepository.addPage(page)) {
+            is AppResult.Error -> {
+                fileRepository.deleteFiles(listOf(captureResult.path, generatedThumbnailPath))
+                addPageResult
+            }
+
+            is AppResult.Success -> AppResult.Success(CapturePageResult(sessionId = session.id, page = page))
+        }
+    }
+
+    private suspend fun captureSafely(
+        outputPath: String,
+        captureToFile: suspend (outputPath: String) -> AppResult<CameraCaptureResult>
+    ): AppResult<CameraCaptureResult> = try {
+        captureToFile(outputPath)
+    } catch (throwable: Throwable) {
+        AppResult.Error(
+            message = CAPTURE_FAILED_MESSAGE,
+            category = AppErrorCategory.CAMERA,
+            throwable = throwable
+        )
+    }
+
+    private suspend fun detectCornersRecoverably(inputPath: String): PageCorners? = try {
+        when (val result = imageProcessingRepository.detectDocument(inputPath)) {
+            is AppResult.Error -> null
+            is AppResult.Success -> result.data
+        }
+    } catch (throwable: Throwable) {
+        null
+    }
+
+    private companion object {
+        const val CAPTURE_FAILED_MESSAGE = "Could not capture image. Please try again."
+    }
 }
 
 class ProcessCapturedPageUseCase @Inject constructor(
@@ -40,6 +134,77 @@ class ProcessCapturedPageUseCase @Inject constructor(
     )
 }
 
+class ApplyPageCropUseCase @Inject constructor(
+    private val scanRepository: ScanRepository,
+    private val imageProcessingRepository: ImageProcessingRepository,
+    private val fileRepository: FileRepository,
+    private val idProvider: IdProvider
+) {
+    suspend operator fun invoke(page: ScannedPage, corners: PageCorners): AppResult<ScannedPage> {
+        when (val storageResult = fileRepository.ensureStorageAvailable(StorageReserveBytes.CAPTURE_BYTES)) {
+            is AppResult.Error -> return storageResult
+            is AppResult.Success -> Unit
+        }
+
+        val outputSuffix = "${page.id}_${idProvider.generateId()}"
+        val processedOutputPath = fileRepository.createProcessedImagePath(
+            sessionId = page.sessionId,
+            suffix = outputSuffix
+        )
+        val thumbnailOutputPath = fileRepository.createThumbnailPath(
+            sessionId = page.sessionId,
+            suffix = outputSuffix
+        )
+        val generatedPaths = listOf(processedOutputPath, thumbnailOutputPath)
+
+        val processedPage = when (
+            val processResult = imageProcessingRepository.processPage(
+                inputPath = page.originalImagePath,
+                processedOutputPath = processedOutputPath,
+                thumbnailOutputPath = thumbnailOutputPath,
+                scanMode = page.scanMode,
+                corners = corners
+            )
+        ) {
+            is AppResult.Error -> {
+                fileRepository.deleteFiles(generatedPaths)
+                return processResult
+            }
+
+            is AppResult.Success -> processResult.data
+        }
+
+        val updatedPage = page.copy(
+            processedImagePath = processedPage.processedImagePath,
+            thumbnailPath = processedPage.thumbnailPath,
+            corners = processedPage.detectedCorners ?: corners
+        )
+
+        return when (val updateResult = scanRepository.updatePage(updatedPage)) {
+            is AppResult.Error -> {
+                fileRepository.deleteFiles(generatedPaths)
+                updateResult
+            }
+
+            is AppResult.Success -> {
+                fileRepository.deleteFiles(page.replacedCropAssetPaths(updatedPage))
+                AppResult.Success(updatedPage)
+            }
+        }
+    }
+
+    private fun ScannedPage.replacedCropAssetPaths(updatedPage: ScannedPage): List<String> {
+        val retainedPaths = setOfNotNull(
+            originalImagePath,
+            updatedPage.processedImagePath,
+            updatedPage.thumbnailPath
+        )
+        return listOfNotNull(processedImagePath, thumbnailPath)
+            .filter { path -> path.isNotBlank() && path !in retainedPaths }
+            .distinct()
+    }
+}
+
 class AddProcessedPageUseCase @Inject constructor(private val scanRepository: ScanRepository) {
     suspend operator fun invoke(page: ScannedPage): AppResult<Unit> = scanRepository.addPage(page)
 }
@@ -48,6 +213,7 @@ class ImportDevicePhotosUseCase @Inject constructor(
     private val scanRepository: ScanRepository,
     private val devicePhotoRepository: DevicePhotoRepository,
     private val fileRepository: FileRepository,
+    private val imageProcessingRepository: ImageProcessingRepository,
     private val idProvider: IdProvider,
     private val timeProvider: TimeProvider
 ) {
@@ -71,7 +237,7 @@ class ImportDevicePhotosUseCase @Inject constructor(
             is AppResult.Success -> Unit
         }
 
-        val session = when (val sessionResult = resolveSession(sessionId = sessionId, scanMode = scanMode)) {
+        val session = when (val sessionResult = resolveInProgressSession(scanRepository, sessionId, scanMode)) {
             is AppResult.Error -> return sessionResult
             is AppResult.Success -> sessionResult.data
         }
@@ -94,6 +260,22 @@ class ImportDevicePhotosUseCase @Inject constructor(
 
                 is AppResult.Success -> importResult.data
             }
+            val thumbnailPath = fileRepository.createThumbnailPath(sessionId = session.id, suffix = pageId)
+            val generatedThumbnailPath = when (
+                val thumbnailResult = imageProcessingRepository.generateThumbnail(
+                    inputPath = importedRawImage.path,
+                    outputPath = thumbnailPath
+                )
+            ) {
+                is AppResult.Error -> {
+                    fileRepository.deleteFiles(listOf(importedRawImage.path, thumbnailPath))
+                    rollbackImportedPages(importedPages)
+                    return thumbnailResult
+                }
+
+                is AppResult.Success -> thumbnailResult.data
+            }
+            val detectedCorners = detectCornersRecoverably(importedRawImage.path)
 
             val page = ScannedPage(
                 id = pageId,
@@ -101,18 +283,18 @@ class ImportDevicePhotosUseCase @Inject constructor(
                 pageIndex = firstPageIndex + offset,
                 originalImagePath = importedRawImage.path,
                 processedImagePath = null,
-                thumbnailPath = null,
+                thumbnailPath = generatedThumbnailPath,
                 rotationDegrees = 0,
                 scanMode = scanMode,
                 width = importedRawImage.width,
                 height = importedRawImage.height,
-                corners = null,
+                corners = detectedCorners,
                 createdAt = timeProvider.now()
             )
 
             when (val addPageResult = scanRepository.addPage(page)) {
                 is AppResult.Error -> {
-                    fileRepository.deleteFile(importedRawImage.path)
+                    fileRepository.deleteFiles(listOf(importedRawImage.path, generatedThumbnailPath))
                     rollbackImportedPages(importedPages)
                     return addPageResult
                 }
@@ -129,39 +311,52 @@ class ImportDevicePhotosUseCase @Inject constructor(
         )
     }
 
-    private suspend fun resolveSession(sessionId: String?, scanMode: ScanMode): AppResult<ScanSession> {
-        if (!sessionId.isNullOrBlank()) {
-            when (val sessionResult = scanRepository.getSession(sessionId)) {
-                is AppResult.Error -> return sessionResult
-
-                is AppResult.Success -> {
-                    val session = sessionResult.data
-                    if (session?.status == ScanSessionStatus.IN_PROGRESS) {
-                        return AppResult.Success(session)
-                    }
-                }
-            }
-        }
-
-        when (val latestSessionResult = scanRepository.getLatestInProgressSession()) {
-            is AppResult.Error -> return latestSessionResult
-
-            is AppResult.Success -> {
-                val latestSession = latestSessionResult.data
-                if (latestSession != null) {
-                    return AppResult.Success(latestSession)
-                }
-            }
-        }
-
-        return scanRepository.createSession(scanMode)
-    }
-
     private suspend fun rollbackImportedPages(importedPages: List<ScannedPage>) {
         importedPages.asReversed().forEach { page ->
             scanRepository.deletePage(page.id)
         }
     }
+
+    private suspend fun detectCornersRecoverably(inputPath: String): PageCorners? = try {
+        when (val result = imageProcessingRepository.detectDocument(inputPath)) {
+            is AppResult.Error -> null
+            is AppResult.Success -> result.data
+        }
+    } catch (throwable: Throwable) {
+        null
+    }
+}
+
+private suspend fun resolveInProgressSession(
+    scanRepository: ScanRepository,
+    sessionId: String?,
+    scanMode: ScanMode
+): AppResult<ScanSession> {
+    if (!sessionId.isNullOrBlank()) {
+        when (val sessionResult = scanRepository.getSession(sessionId)) {
+            is AppResult.Error -> return sessionResult
+
+            is AppResult.Success -> {
+                val session = sessionResult.data
+                if (session?.status == ScanSessionStatus.IN_PROGRESS) {
+                    return AppResult.Success(session)
+                }
+            }
+        }
+    }
+
+    when (val latestSessionResult = scanRepository.getLatestInProgressSession()) {
+        is AppResult.Error -> return latestSessionResult
+
+        is AppResult.Success -> {
+            val latestSession = latestSessionResult.data
+            if (latestSession != null) {
+                return AppResult.Success(latestSession)
+            }
+        }
+    }
+
+    return scanRepository.createSession(scanMode)
 }
 
 class UpdatePageUseCase @Inject constructor(private val scanRepository: ScanRepository) {

@@ -1,5 +1,6 @@
 package com.docly.app.feature.scanner
 
+import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.ScanMode
 
@@ -12,6 +13,7 @@ data class ScannerUiState(
     val isFlashEnabled: Boolean = false,
     val scanMode: ScanMode = ScanMode.DOCUMENT,
     val detectedCorners: PageCorners? = null,
+    val previewBoundary: PreviewDocumentBoundary? = null,
     val qualityHint: String? = null,
     val sessionId: String? = null,
     val errorMessage: String? = null

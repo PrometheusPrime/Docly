@@ -7,6 +7,8 @@ sealed interface ReviewUiEvent {
     data object OnLoad : ReviewUiEvent
     data class OnScanModeChanged(val scanMode: ScanMode) : ReviewUiEvent
     data class OnCornersChanged(val corners: PageCorners) : ReviewUiEvent
+    data object OnResetToDetectedClicked : ReviewUiEvent
+    data object OnResetToFullImageClicked : ReviewUiEvent
     data object OnReprocessClicked : ReviewUiEvent
     data object OnRotateClicked : ReviewUiEvent
     data object OnAcceptClicked : ReviewUiEvent

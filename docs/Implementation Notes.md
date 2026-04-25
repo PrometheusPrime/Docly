@@ -336,3 +336,64 @@ Validation:
 - `rg -n "READ_EXTERNAL|READ_MEDIA|MANAGE_EXTERNAL|WRITE_EXTERNAL" app/src/main/AndroidManifest.xml app/src/main || true` returned no matches.
 - `adb devices` reported one attached device: `1268015548000502`.
 - Manual Photo Picker validation with real gallery photos was not performed in this terminal session.
+
+## 2026-04-19 - Phase 16 Perspective Correction and Corner Ordering
+
+Scope:
+
+- Replaced the perspective-correction placeholder with an OpenCV-backed `OpenCvPerspectiveTransformer`.
+- Hardened `CornerOrderingUtil` so invalid corner counts, duplicate points, and non-finite coordinates are rejected before ordering.
+- Wired Hilt image-processing bindings to the real perspective transformer.
+- Added JVM tests for corner-order validation and Android instrumentation coverage for generated skewed-document warping.
+- Kept process-page orchestration, manual crop UI, enhancement modes, and review actions out of this phase.
+
+Perspective decisions:
+
+- The transformer decodes through `BitmapLoader`, so EXIF orientation and downsampling behavior stay centralized.
+- Supplied corners are scaled from original oriented image dimensions into the decoded bitmap coordinate space before warping.
+- Target output dimensions are computed from opposing edge distances after corner ordering.
+- OpenCV homography and `warpPerspective` run on the default dispatcher; JPEG file writing runs on the IO dispatcher.
+- Failed warp attempts delete partial output and return a categorized `PROCESSING` error.
+
+Validation:
+
+- `./gradlew --no-daemon :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL in 5m 55s`.
+- `./gradlew --no-daemon :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 2m 56s`.
+- `./gradlew --no-daemon :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 13m 38s`.
+- `./gradlew --no-daemon :app:assembleDebug --console=plain` completed with `BUILD SUCCESSFUL in 6m 2s`.
+- `./gradlew --no-daemon :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 10m 49s`.
+- `adb devices` reported one attached device: `1268015548000502`.
+- `./gradlew --no-daemon :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 5m 29s`; 31 tests passed on `TECNO KL5 - 14`.
+
+## 2026-04-25 - Phase 17 Manual Crop Adjustment Fallback
+
+Scope:
+
+- Added a review-screen crop editor for the latest captured or imported page.
+- Added a four-corner draggable crop overlay with `ContentScale.Fit` coordinate mapping between viewport pixels and oriented raw-image coordinates.
+- Added reset actions for detected corners and full-image bounds.
+- Added crop application through `ApplyPageCropUseCase`, which generates unique processed/thumbnail paths, runs perspective correction, updates the existing page row, and cleans up failed or superseded output files.
+- Implemented the Phase 17 `ImageProcessingRepository.processPage` path as perspective warp plus thumbnail generation; enhancement modes remain deferred to Phase 18.
+- Wired review UI events/effects through `ReviewViewModel` and `AppNavHost`.
+
+Implementation decisions:
+
+- `ScannedPage.width` and `height` continue to represent oriented raw-image dimensions so later crop edits remain in stable source-image coordinates.
+- Crop reset falls back to full-image bounds when automatic detection did not produce corners.
+- Repeated crop applications use a suffix based on `page.id` plus a new generated ID to avoid overwriting the currently referenced processed image or thumbnail.
+- Existing processed assets are deleted only after the page update succeeds.
+
+Tests:
+
+- Added JVM coverage for crop coordinate mapping, reverse mapping, drag delta mapping, bounds clamping, and full-image fallback corners.
+- Added JVM coverage for `ApplyPageCropUseCase`: successful update, unique output paths, processing failure cleanup, update failure cleanup, old asset cleanup, and storage failure.
+- Added JVM coverage for `ReviewViewModel`: detected-corner load, full-bounds fallback, corner changes, reset actions, crop success, processing failure, and update failure.
+- Added Compose UI coverage for crop overlay rendering, handle rendering, action enabled states, and drag dispatch.
+
+Validation:
+
+- `./gradlew ktlintCheck` completed with `BUILD SUCCESSFUL in 39s`.
+- `./gradlew testDebugUnitTest` completed with `BUILD SUCCESSFUL in 3m 40s`.
+- `./gradlew assembleDebug` completed with `BUILD SUCCESSFUL in 2m 5s`.
+- `./gradlew assembleDebugAndroidTest` completed with `BUILD SUCCESSFUL in 1m 32s`.
+- `adb devices` reported no attached devices, so connected/manual device validation was not run in this session.

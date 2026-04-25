@@ -78,6 +78,8 @@ data class ProcessedPageResult(
 
 data class ImportedRawImage(val path: String, val width: Int, val height: Int)
 
+data class CapturePageResult(val sessionId: String, val page: ScannedPage)
+
 data class ImportDevicePhotosResult(val sessionId: String, val importedPages: List<ScannedPage>)
 
 data class ValidationResult(val isValid: Boolean, val errors: List<String> = emptyList())

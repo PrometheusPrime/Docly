@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.toUserMessage
+import com.docly.app.domain.usecase.page.CapturePageUseCase
 import com.docly.app.domain.usecase.page.ImportDevicePhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -17,8 +18,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 @HiltViewModel
-class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase: ImportDevicePhotosUseCase) :
-    ViewModel() {
+class ScannerViewModel @Inject constructor(
+    private val capturePageUseCase: CapturePageUseCase,
+    private val importDevicePhotosUseCase: ImportDevicePhotosUseCase
+) : ViewModel() {
     private val _uiState = MutableStateFlow(ScannerUiState())
     val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
 
@@ -34,7 +37,8 @@ class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase
             is ScannerUiEvent.OnCameraReadyChanged -> _uiState.update { state ->
                 state.copy(
                     isCameraReady = event.ready,
-                    isFlashEnabled = if (event.ready) state.isFlashEnabled else false
+                    isFlashEnabled = if (event.ready) state.isFlashEnabled else false,
+                    previewBoundary = if (event.ready) state.previewBoundary else null
                 )
             }
 
@@ -43,6 +47,7 @@ class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase
                     isCameraReady = false,
                     isFlashAvailable = false,
                     isFlashEnabled = false,
+                    previewBoundary = null,
                     errorMessage = event.message
                 )
             }
@@ -62,7 +67,7 @@ class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase
                 }
             }
 
-            ScannerUiEvent.OnCaptureClicked -> showMessage("Camera capture is not implemented yet.")
+            is ScannerUiEvent.OnCaptureClicked -> capturePage(event.captureAction)
 
             is ScannerUiEvent.OnImportPhotosSelected -> importPhotos(event.sourceUris)
 
@@ -72,6 +77,13 @@ class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase
 
             is ScannerUiEvent.OnCornersDetected -> _uiState.update { state ->
                 state.copy(detectedCorners = event.corners)
+            }
+
+            is ScannerUiEvent.OnPreviewDocumentBoundaryChanged -> _uiState.update { state ->
+                state.copy(
+                    previewBoundary = event.boundary,
+                    detectedCorners = event.boundary?.corners ?: state.detectedCorners
+                )
             }
         }
     }
@@ -83,13 +95,14 @@ class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase
                 isCameraReady = if (status == CameraPermissionStatus.Granted) state.isCameraReady else false,
                 isFlashAvailable = if (status == CameraPermissionStatus.Granted) state.isFlashAvailable else false,
                 isFlashEnabled = if (status == CameraPermissionStatus.Granted) state.isFlashEnabled else false,
+                previewBoundary = if (status == CameraPermissionStatus.Granted) state.previewBoundary else null,
                 errorMessage = if (status == CameraPermissionStatus.Granted) null else state.errorMessage
             )
         }
     }
 
     private fun importPhotos(sourceUris: List<String>) {
-        if (sourceUris.isEmpty() || _uiState.value.isImporting) return
+        if (sourceUris.isEmpty() || _uiState.value.isImporting || _uiState.value.isCapturing) return
 
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -126,9 +139,50 @@ class ScannerViewModel @Inject constructor(private val importDevicePhotosUseCase
         }
     }
 
-    private fun showMessage(message: String) {
+    private fun capturePage(captureAction: ScannerCaptureAction) {
+        val currentState = _uiState.value
+        if (
+            currentState.isCapturing ||
+            currentState.isImporting ||
+            !currentState.isCameraPermissionGranted ||
+            !currentState.isCameraReady
+        ) {
+            return
+        }
+
+        _uiState.update { state ->
+            state.copy(isCapturing = true, errorMessage = null)
+        }
+
         viewModelScope.launch {
-            _uiEffect.emit(ScannerUiEffect.ShowToast(message))
+            when (
+                val result = capturePageUseCase(
+                    sessionId = currentState.sessionId,
+                    scanMode = currentState.scanMode,
+                    captureToFile = captureAction::captureToFile
+                )
+            ) {
+                is AppResult.Error -> {
+                    val message = result.toCaptureUserMessage()
+                    _uiState.update { state ->
+                        state.copy(isCapturing = false, errorMessage = message)
+                    }
+                    _uiEffect.emit(ScannerUiEffect.ShowToast(message))
+                }
+
+                is AppResult.Success -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            isCapturing = false,
+                            sessionId = result.data.sessionId,
+                            errorMessage = null
+                        )
+                    }
+                    _uiEffect.emit(ScannerUiEffect.NavigateToReview(result.data.sessionId))
+                }
+            }
         }
     }
+
+    private fun AppResult.Error.toCaptureUserMessage(): String = if (message.isNotBlank()) message else toUserMessage()
 }

@@ -36,7 +36,8 @@ interface ImageProcessingRepository {
 
     suspend fun processPage(
         inputPath: String,
-        outputPath: String,
+        processedOutputPath: String,
+        thumbnailOutputPath: String,
         scanMode: ScanMode,
         corners: PageCorners?
     ): AppResult<ProcessedPageResult>

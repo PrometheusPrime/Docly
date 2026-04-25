@@ -67,37 +67,4 @@ class Phase05NavigationTest {
         composeRule.onNodeWithTag(DoclyTestTags.SCANNER_SCREEN)
             .assertIsDisplayed()
     }
-
-    @Test
-    fun placeholderWorkflowNavigatesThroughAllPhase05Screens() {
-        composeRule.onNodeWithTag(DoclyTestTags.SCANNER_REVIEW_ACTION)
-            .performClick()
-
-        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_SCREEN)
-            .assertIsDisplayed()
-
-        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_EDITOR_ACTION)
-            .performClick()
-
-        composeRule.onNodeWithTag(DoclyTestTags.EDITOR_SCREEN)
-            .assertIsDisplayed()
-
-        composeRule.onNodeWithTag(DoclyTestTags.EDITOR_METADATA_ACTION)
-            .performClick()
-
-        composeRule.onNodeWithTag(DoclyTestTags.METADATA_SCREEN)
-            .assertIsDisplayed()
-
-        composeRule.onNodeWithTag(DoclyTestTags.METADATA_EXPORT_ACTION)
-            .performClick()
-
-        composeRule.onNodeWithTag(DoclyTestTags.EXPORT_SCREEN)
-            .assertIsDisplayed()
-
-        composeRule.onNodeWithTag(DoclyTestTags.EXPORT_LIBRARY_ACTION)
-            .performClick()
-
-        composeRule.onNodeWithTag(DoclyTestTags.LIBRARY_SCREEN)
-            .assertIsDisplayed()
-    }
 }

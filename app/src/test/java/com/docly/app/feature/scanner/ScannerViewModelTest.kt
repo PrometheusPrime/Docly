@@ -1,11 +1,16 @@
 package com.docly.app.feature.scanner
 
+import com.docly.app.core.camera.CameraCaptureResult
+import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.core.common.IdProvider
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.ImportedRawImage
+import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PointFSerializable
+import com.docly.app.domain.model.ProcessedPageResult
 import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
@@ -13,7 +18,9 @@ import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
 import com.docly.app.domain.repository.DevicePhotoRepository
 import com.docly.app.domain.repository.FileRepository
+import com.docly.app.domain.repository.ImageProcessingRepository
 import com.docly.app.domain.repository.ScanRepository
+import com.docly.app.domain.usecase.page.CapturePageUseCase
 import com.docly.app.domain.usecase.page.ImportDevicePhotosUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -42,7 +49,7 @@ class ScannerViewModelTest {
 
     @Test
     fun permissionResultsUpdateCameraPermissionStatus() {
-        val viewModel = ScannerViewModel(importDevicePhotosUseCase = importUseCase())
+        val viewModel = viewModel()
 
         viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
 
@@ -63,10 +70,12 @@ class ScannerViewModelTest {
 
     @Test
     fun cameraPreviewErrorClearsReadyAndFlashState() {
-        val viewModel = ScannerViewModel(importDevicePhotosUseCase = importUseCase())
+        val viewModel = viewModel()
+        val previewBoundary = samplePreviewBoundary()
 
         viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
         viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        viewModel.onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(previewBoundary))
         viewModel.onEvent(ScannerUiEvent.OnFlashAvailabilityChanged(true))
         viewModel.onEvent(ScannerUiEvent.OnFlashToggleClicked)
         viewModel.onEvent(ScannerUiEvent.OnCameraPreviewError("Camera is unavailable. Please try again."))
@@ -74,12 +83,40 @@ class ScannerViewModelTest {
         assertFalse(viewModel.uiState.value.isCameraReady)
         assertFalse(viewModel.uiState.value.isFlashAvailable)
         assertFalse(viewModel.uiState.value.isFlashEnabled)
+        assertNull(viewModel.uiState.value.previewBoundary)
         assertEquals("Camera is unavailable. Please try again.", viewModel.uiState.value.errorMessage)
     }
 
     @Test
+    fun previewBoundaryUpdatesScannerStateAndDetectedCorners() {
+        val viewModel = viewModel()
+        val previewBoundary = samplePreviewBoundary()
+
+        viewModel.onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(previewBoundary))
+
+        assertEquals(previewBoundary, viewModel.uiState.value.previewBoundary)
+        assertEquals(previewBoundary.corners, viewModel.uiState.value.detectedCorners)
+
+        viewModel.onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(null))
+
+        assertNull(viewModel.uiState.value.previewBoundary)
+        assertEquals(previewBoundary.corners, viewModel.uiState.value.detectedCorners)
+    }
+
+    @Test
+    fun cameraNotReadyClearsPreviewBoundary() {
+        val viewModel = viewModel()
+
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        viewModel.onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(samplePreviewBoundary()))
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(false))
+
+        assertNull(viewModel.uiState.value.previewBoundary)
+    }
+
+    @Test
     fun flashToggleRequiresReadyCameraAndFlashSupport() {
-        val viewModel = ScannerViewModel(importDevicePhotosUseCase = importUseCase())
+        val viewModel = viewModel()
 
         viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
         viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
@@ -110,7 +147,7 @@ class ScannerViewModelTest {
 
     @Test
     fun importSuccessUpdatesSessionAndEmitsReviewNavigation() = runTest {
-        val viewModel = ScannerViewModel(
+        val viewModel = viewModel(
             importDevicePhotosUseCase = importUseCase(
                 idProvider = SequenceIdProvider(listOf("page-1"))
             )
@@ -129,7 +166,7 @@ class ScannerViewModelTest {
 
     @Test
     fun importFailureShowsReadableErrorAndClearsLoading() = runTest {
-        val viewModel = ScannerViewModel(
+        val viewModel = viewModel(
             importDevicePhotosUseCase = importUseCase(
                 devicePhotoRepository = FakeDevicePhotoRepository(
                     result = AppResult.Error(
@@ -151,34 +188,156 @@ class ScannerViewModelTest {
         assertTrue(effect.await() is ScannerUiEffect.ShowToast)
     }
 
+    @Test
+    fun captureSuccessUpdatesSessionAndEmitsReviewNavigation() = runTest {
+        val scanRepository = FakeScanRepository()
+        val viewModel = viewModel(
+            capturePageUseCase = captureUseCase(
+                scanRepository = scanRepository,
+                idProvider = SequenceIdProvider(listOf("page-1"))
+            )
+        )
+        var captureCalls = 0
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        viewModel.onEvent(
+            ScannerUiEvent.OnCaptureClicked(
+                ScannerCaptureAction { outputPath ->
+                    captureCalls += 1
+                    AppResult.Success(CameraCaptureResult(path = outputPath, width = 300, height = 400))
+                }
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, captureCalls)
+        assertFalse(viewModel.uiState.value.isCapturing)
+        assertEquals("created-session", viewModel.uiState.value.sessionId)
+        assertEquals(null, viewModel.uiState.value.errorMessage)
+        assertEquals("/raw/created-session/page-1.jpg", scanRepository.addedPages.single().originalImagePath)
+        assertEquals("/thumb/created-session/page-1.jpg", scanRepository.addedPages.single().thumbnailPath)
+        assertEquals(ScannerUiEffect.NavigateToReview("created-session"), effect.await())
+    }
+
+    @Test
+    fun captureFailureShowsReadableErrorAndClearsLoading() = runTest {
+        val viewModel = viewModel(
+            capturePageUseCase = captureUseCase(idProvider = SequenceIdProvider(listOf("page-1")))
+        )
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        viewModel.onEvent(
+            ScannerUiEvent.OnCaptureClicked(
+                ScannerCaptureAction {
+                    AppResult.Error(
+                        message = "Could not capture image. Please try again.",
+                        category = AppErrorCategory.CAMERA
+                    )
+                }
+            )
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isCapturing)
+        assertEquals("Could not capture image. Please try again.", viewModel.uiState.value.errorMessage)
+        assertTrue(effect.await() is ScannerUiEffect.ShowToast)
+    }
+
+    @Test
+    fun duplicateCaptureClicksAreIgnoredWhileCaptureIsRunning() = runTest {
+        val viewModel = viewModel(
+            capturePageUseCase = captureUseCase(idProvider = SequenceIdProvider(listOf("page-1", "page-2")))
+        )
+        var captureCalls = 0
+
+        viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        val captureAction = ScannerCaptureAction { outputPath: String ->
+            captureCalls += 1
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 300, height = 400))
+        }
+
+        viewModel.onEvent(ScannerUiEvent.OnCaptureClicked(captureAction))
+        viewModel.onEvent(ScannerUiEvent.OnCaptureClicked(captureAction))
+        advanceUntilIdle()
+
+        assertEquals(1, captureCalls)
+        assertFalse(viewModel.uiState.value.isCapturing)
+    }
+
+    private fun viewModel(
+        capturePageUseCase: CapturePageUseCase = captureUseCase(),
+        importDevicePhotosUseCase: ImportDevicePhotosUseCase = importUseCase()
+    ): ScannerViewModel = ScannerViewModel(
+        capturePageUseCase = capturePageUseCase,
+        importDevicePhotosUseCase = importDevicePhotosUseCase
+    )
+
+    private fun captureUseCase(
+        scanRepository: FakeScanRepository = FakeScanRepository(),
+        fileRepository: FakeFileRepository = FakeFileRepository(),
+        imageProcessingRepository: ImageProcessingRepository = FakeImageProcessingRepository(),
+        idProvider: IdProvider = SequenceIdProvider(listOf("page-1", "page-2")),
+        timeProvider: TimeProvider = FixedTimeProvider(timestampMillis = 1L)
+    ): CapturePageUseCase = CapturePageUseCase(
+        scanRepository = scanRepository,
+        fileRepository = fileRepository,
+        imageProcessingRepository = imageProcessingRepository,
+        idProvider = idProvider,
+        timeProvider = timeProvider
+    )
+
     private fun importUseCase(
         scanRepository: FakeScanRepository = FakeScanRepository(),
         devicePhotoRepository: FakeDevicePhotoRepository = FakeDevicePhotoRepository(),
         fileRepository: FakeFileRepository = FakeFileRepository(),
+        imageProcessingRepository: ImageProcessingRepository = FakeImageProcessingRepository(),
         idProvider: IdProvider = SequenceIdProvider(listOf("page-1", "page-2")),
         timeProvider: TimeProvider = FixedTimeProvider(timestampMillis = 1L)
     ): ImportDevicePhotosUseCase = ImportDevicePhotosUseCase(
         scanRepository = scanRepository,
         devicePhotoRepository = devicePhotoRepository,
         fileRepository = fileRepository,
+        imageProcessingRepository = imageProcessingRepository,
         idProvider = idProvider,
         timeProvider = timeProvider
     )
 
+    private fun samplePreviewBoundary(): PreviewDocumentBoundary = PreviewDocumentBoundary(
+        corners = PageCorners(
+            topLeft = PointFSerializable(10f, 20f),
+            topRight = PointFSerializable(90f, 25f),
+            bottomRight = PointFSerializable(80f, 180f),
+            bottomLeft = PointFSerializable(15f, 170f)
+        ),
+        imageWidth = 100,
+        imageHeight = 200
+    )
+
     private class FakeScanRepository : ScanRepository {
+        val sessionsById: MutableMap<String, ScanSession> = mutableMapOf()
         val addedPages: MutableList<ScannedPage> = mutableListOf()
 
-        override suspend fun createSession(scanMode: ScanMode): AppResult<ScanSession> = AppResult.Success(
-            ScanSession(
+        override suspend fun createSession(scanMode: ScanMode): AppResult<ScanSession> {
+            val session = ScanSession(
                 id = "created-session",
                 createdAt = 1L,
                 updatedAt = 1L,
                 status = ScanSessionStatus.IN_PROGRESS,
                 scanMode = scanMode
             )
-        )
+            sessionsById[session.id] = session
+            return AppResult.Success(session)
+        }
 
-        override suspend fun getSession(sessionId: String): AppResult<ScanSession?> = AppResult.Success(null)
+        override suspend fun getSession(sessionId: String): AppResult<ScanSession?> =
+            AppResult.Success(sessionsById[sessionId])
 
         override suspend fun getLatestInProgressSession(): AppResult<ScanSession?> = AppResult.Success(null)
 
@@ -248,6 +407,24 @@ class ScannerViewModelTest {
 
     private class FixedTimeProvider(private val timestampMillis: Long) : TimeProvider {
         override fun now(): Long = timestampMillis
+    }
+
+    private class FakeImageProcessingRepository : ImageProcessingRepository {
+        override suspend fun detectDocument(inputPath: String): AppResult<PageCorners?> = AppResult.Success(null)
+
+        override suspend fun processPage(
+            inputPath: String,
+            processedOutputPath: String,
+            thumbnailOutputPath: String,
+            scanMode: ScanMode,
+            corners: PageCorners?
+        ): AppResult<ProcessedPageResult> = AppResult.Error(
+            message = "Not implemented.",
+            category = AppErrorCategory.PROCESSING
+        )
+
+        override suspend fun generateThumbnail(inputPath: String, outputPath: String): AppResult<String> =
+            AppResult.Success(outputPath)
     }
 
     class MainDispatcherRule(private val testDispatcher: TestDispatcher = StandardTestDispatcher()) :

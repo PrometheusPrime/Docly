@@ -1,5 +1,6 @@
 package com.docly.app.domain
 
+import com.docly.app.core.camera.CameraCaptureResult
 import com.docly.app.core.common.IdProvider
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
@@ -7,7 +8,6 @@ import com.docly.app.core.result.errorOrNull
 import com.docly.app.core.result.getOrNull
 import com.docly.app.core.time.TimeProvider
 import com.docly.app.domain.model.DocumentMetadata
-import com.docly.app.domain.model.ImportedRawImage
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.ProcessedPageResult
@@ -16,69 +16,54 @@ import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
-import com.docly.app.domain.repository.DevicePhotoRepository
 import com.docly.app.domain.repository.FileRepository
 import com.docly.app.domain.repository.ImageProcessingRepository
 import com.docly.app.domain.repository.ScanRepository
 import com.docly.app.domain.repository.StorageReserveBytes
-import com.docly.app.domain.usecase.page.ImportDevicePhotosUseCase
+import com.docly.app.domain.usecase.page.CapturePageUseCase
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ImportDevicePhotosUseCaseTest {
+class CapturePageUseCaseTest {
     @Test
-    fun emptySelectionReturnsValidationWithoutSideEffects() = runBlocking {
-        val scanRepository = FakeScanRepository()
-        val devicePhotoRepository = FakeDevicePhotoRepository()
-        val result = useCase(
-            scanRepository = scanRepository,
-            devicePhotoRepository = devicePhotoRepository
-        )(
-            sessionId = null,
-            sourceUris = listOf("  "),
-            scanMode = ScanMode.DOCUMENT
-        )
-
-        assertEquals(AppErrorCategory.VALIDATION, result.errorOrNull()?.category)
-        assertEquals(0, scanRepository.createSessionCalls)
-        assertTrue(scanRepository.addedPages.isEmpty())
-        assertTrue(devicePhotoRepository.requests.isEmpty())
-    }
-
-    @Test
-    fun importCreatesNewSessionWhenNoneExists() = runBlocking {
+    fun captureCreatesNewSessionAndPersistsRawPage() = runBlocking {
         val scanRepository = FakeScanRepository()
         val fileRepository = FakeFileRepository()
+        var captureOutputPath = ""
+
         val result = useCase(
             scanRepository = scanRepository,
             fileRepository = fileRepository,
-            idProvider = SequenceIdProvider(listOf("page-1"))
+            idProvider = SequenceIdProvider(listOf("page-1")),
+            timeProvider = FixedTimeProvider(timestampMillis = 123L)
         )(
             sessionId = null,
-            sourceUris = listOf("content://first"),
             scanMode = ScanMode.COLOR
-        )
+        ) { outputPath ->
+            captureOutputPath = outputPath
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 1000, height = 1500))
+        }
 
-        val importedPages = result.getOrNull()?.importedPages.orEmpty()
+        val page = result.getOrNull()?.page
         assertEquals("created-session", result.getOrNull()?.sessionId)
         assertEquals(1, scanRepository.createSessionCalls)
         assertEquals(ScanMode.COLOR, scanRepository.createdScanMode)
         assertEquals(StorageReserveBytes.CAPTURE_BYTES, fileRepository.requiredBytes)
-        assertEquals(1, importedPages.size)
-        assertEquals("page-1", importedPages.first().id)
-        assertEquals("created-session", importedPages.first().sessionId)
-        assertEquals(0, importedPages.first().pageIndex)
-        assertEquals("/raw/page-1.jpg", importedPages.first().originalImagePath)
-        assertEquals("/thumb/created-session/page-1.jpg", importedPages.first().thumbnailPath)
-        assertEquals(100, importedPages.first().width)
-        assertEquals(200, importedPages.first().height)
+        assertEquals("/raw/created-session/page-1.jpg", captureOutputPath)
+        assertEquals("/raw/created-session/page-1.jpg", page?.originalImagePath)
+        assertEquals("/thumb/created-session/page-1.jpg", page?.thumbnailPath)
+        assertEquals(0, page?.pageIndex)
+        assertEquals(1000, page?.width)
+        assertEquals(1500, page?.height)
+        assertEquals(123L, page?.createdAt)
+        assertEquals(listOf("page-1"), scanRepository.addedPages.map { it.id })
     }
 
     @Test
-    fun importReusesLatestInProgressSessionWhenNoSessionIdIsProvided() = runBlocking {
-        val existingPage = samplePage(id = "existing-page", pageIndex = 2)
+    fun captureReusesLatestInProgressSessionAndAssignsNextPageIndex() = runBlocking {
+        val existingPage = samplePage(id = "existing-page", sessionId = "latest-session", pageIndex = 4)
         val scanRepository = FakeScanRepository(
             latestSession = sampleSession(id = "latest-session", pages = listOf(existingPage))
         )
@@ -88,80 +73,153 @@ class ImportDevicePhotosUseCaseTest {
             idProvider = SequenceIdProvider(listOf("page-1"))
         )(
             sessionId = null,
-            sourceUris = listOf("content://first"),
             scanMode = ScanMode.MIXED
-        )
+        ) { outputPath ->
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 300, height = 400))
+        }
 
-        val importedPage = result.getOrNull()?.importedPages?.single()
+        val page = result.getOrNull()?.page
         assertEquals("latest-session", result.getOrNull()?.sessionId)
         assertEquals(0, scanRepository.createSessionCalls)
-        assertEquals(3, importedPage?.pageIndex)
-        assertEquals(ScanMode.MIXED, importedPage?.scanMode)
+        assertEquals(5, page?.pageIndex)
+        assertEquals(ScanMode.MIXED, page?.scanMode)
+        assertEquals("/raw/latest-session/page-1.jpg", page?.originalImagePath)
+        assertEquals("/thumb/latest-session/page-1.jpg", page?.thumbnailPath)
     }
 
     @Test
-    fun importPreservesPickerOrderAndPageIndexOrder() = runBlocking {
-        val scanRepository = FakeScanRepository(
-            latestSession = sampleSession(
-                id = "latest-session",
-                pages = listOf(samplePage(id = "existing-page", pageIndex = 5))
-            )
-        )
-        val devicePhotoRepository = FakeDevicePhotoRepository().apply {
-            importedImagesByUri["content://first"] = ImportedRawImage("/raw/first.png", width = 10, height = 20)
-            importedImagesByUri["content://second"] = ImportedRawImage("/raw/second.png", width = 30, height = 40)
-        }
-
-        val result = useCase(
-            scanRepository = scanRepository,
-            devicePhotoRepository = devicePhotoRepository,
-            idProvider = SequenceIdProvider(listOf("page-1", "page-2")),
-            timeProvider = FixedTimeProvider(timestampMillis = 123L)
-        )(
-            sessionId = null,
-            sourceUris = listOf("content://first", "content://second"),
-            scanMode = ScanMode.DOCUMENT
-        )
-
-        val importedPages = result.getOrNull()?.importedPages.orEmpty()
-        assertEquals(listOf("content://first", "content://second"), devicePhotoRepository.requests.map { it.sourceUri })
-        assertEquals(listOf("page-1", "page-2"), importedPages.map { page -> page.id })
-        assertEquals(listOf(6, 7), importedPages.map { page -> page.pageIndex })
-        assertEquals(listOf("/raw/first.png", "/raw/second.png"), importedPages.map { page -> page.originalImagePath })
-        assertEquals(
-            listOf("/thumb/latest-session/page-1.jpg", "/thumb/latest-session/page-2.jpg"),
-            importedPages.map { page -> page.thumbnailPath }
-        )
-        assertEquals(listOf(123L, 123L), importedPages.map { page -> page.createdAt })
-    }
-
-    @Test
-    fun importFailureRollsBackPagesCreatedByCurrentBatch() = runBlocking {
+    fun storageFailurePreventsCapture() = runBlocking {
         val scanRepository = FakeScanRepository()
-        val devicePhotoRepository = FakeDevicePhotoRepository().apply {
-            errorsByUri["content://second"] = AppResult.Error(
-                message = "Copy failed.",
+        val fileRepository = FakeFileRepository(
+            storageResult = AppResult.Error(
+                message = "Not enough app storage is available.",
                 category = AppErrorCategory.STORAGE
             )
-        }
+        )
+        var captureCalls = 0
 
         val result = useCase(
             scanRepository = scanRepository,
-            devicePhotoRepository = devicePhotoRepository,
-            idProvider = SequenceIdProvider(listOf("page-1", "page-2"))
+            fileRepository = fileRepository
         )(
             sessionId = null,
-            sourceUris = listOf("content://first", "content://second"),
             scanMode = ScanMode.DOCUMENT
-        )
+        ) {
+            captureCalls += 1
+            AppResult.Success(CameraCaptureResult(path = it, width = 100, height = 200))
+        }
 
         assertEquals(AppErrorCategory.STORAGE, result.errorOrNull()?.category)
-        assertEquals(listOf("page-1"), scanRepository.deletedPageIds)
-        assertEquals(listOf("page-1"), scanRepository.addedPages.map { page -> page.id })
+        assertEquals(0, captureCalls)
+        assertEquals(0, scanRepository.createSessionCalls)
+        assertTrue(scanRepository.addedPages.isEmpty())
     }
 
     @Test
-    fun addPageFailureDeletesUnpersistedImportedFile() = runBlocking {
+    fun captureFailureDeletesPartialOutputAndDoesNotInsertPage() = runBlocking {
+        val scanRepository = FakeScanRepository()
+        val fileRepository = FakeFileRepository()
+
+        val result = useCase(
+            scanRepository = scanRepository,
+            fileRepository = fileRepository,
+            idProvider = SequenceIdProvider(listOf("page-1"))
+        )(
+            sessionId = null,
+            scanMode = ScanMode.DOCUMENT
+        ) {
+            AppResult.Error(
+                message = "Could not capture image. Please try again.",
+                category = AppErrorCategory.CAMERA
+            )
+        }
+
+        assertEquals(AppErrorCategory.CAMERA, result.errorOrNull()?.category)
+        assertEquals(listOf("/raw/created-session/page-1.jpg"), fileRepository.deletedFiles)
+        assertTrue(scanRepository.addedPages.isEmpty())
+    }
+
+    @Test
+    fun thumbnailFailureDeletesRawAndThumbnailFilesAndDoesNotInsertPage() = runBlocking {
+        val scanRepository = FakeScanRepository()
+        val fileRepository = FakeFileRepository()
+        val imageProcessingRepository = FakeImageProcessingRepository(
+            thumbnailResult = AppResult.Error(
+                message = "Thumbnail could not be generated.",
+                category = AppErrorCategory.PROCESSING
+            )
+        )
+
+        val result = useCase(
+            scanRepository = scanRepository,
+            fileRepository = fileRepository,
+            imageProcessingRepository = imageProcessingRepository,
+            idProvider = SequenceIdProvider(listOf("page-1"))
+        )(
+            sessionId = null,
+            scanMode = ScanMode.DOCUMENT
+        ) { outputPath ->
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 100, height = 200))
+        }
+
+        assertEquals(AppErrorCategory.PROCESSING, result.errorOrNull()?.category)
+        assertEquals(
+            listOf("/raw/created-session/page-1.jpg", "/thumb/created-session/page-1.jpg"),
+            fileRepository.deletedFiles
+        )
+        assertTrue(scanRepository.addedPages.isEmpty())
+        assertTrue(imageProcessingRepository.detectedInputPaths.isEmpty())
+    }
+
+    @Test
+    fun capturePersistsDetectedDocumentCorners() = runBlocking {
+        val detectedCorners = sampleCorners()
+        val scanRepository = FakeScanRepository()
+
+        val result = useCase(
+            scanRepository = scanRepository,
+            imageProcessingRepository = FakeImageProcessingRepository(
+                detectionResult = AppResult.Success(detectedCorners)
+            ),
+            idProvider = SequenceIdProvider(listOf("page-1"))
+        )(
+            sessionId = null,
+            scanMode = ScanMode.DOCUMENT
+        ) { outputPath ->
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 100, height = 200))
+        }
+
+        assertEquals(detectedCorners, result.getOrNull()?.page?.corners)
+        assertEquals(detectedCorners, scanRepository.addedPages.single().corners)
+    }
+
+    @Test
+    fun documentDetectionFailureStillPersistsCapturedPageWithoutCorners() = runBlocking {
+        val scanRepository = FakeScanRepository()
+
+        val result = useCase(
+            scanRepository = scanRepository,
+            imageProcessingRepository = FakeImageProcessingRepository(
+                detectionResult = AppResult.Error(
+                    message = "Document boundary detection failed.",
+                    category = AppErrorCategory.PROCESSING
+                )
+            ),
+            idProvider = SequenceIdProvider(listOf("page-1"))
+        )(
+            sessionId = null,
+            scanMode = ScanMode.DOCUMENT
+        ) { outputPath ->
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 100, height = 200))
+        }
+
+        assertEquals(null, result.errorOrNull())
+        assertEquals(null, result.getOrNull()?.page?.corners)
+        assertEquals(null, scanRepository.addedPages.single().corners)
+    }
+
+    @Test
+    fun addPageFailureDeletesCapturedRawFile() = runBlocking {
         val scanRepository = FakeScanRepository().apply {
             addPageErrorsById["page-1"] = AppResult.Error(
                 message = "Could not add page.",
@@ -176,103 +234,27 @@ class ImportDevicePhotosUseCaseTest {
             idProvider = SequenceIdProvider(listOf("page-1"))
         )(
             sessionId = null,
-            sourceUris = listOf("content://first"),
             scanMode = ScanMode.DOCUMENT
-        )
+        ) { outputPath ->
+            AppResult.Success(CameraCaptureResult(path = outputPath, width = 100, height = 200))
+        }
 
         assertEquals(AppErrorCategory.STORAGE, result.errorOrNull()?.category)
-        assertEquals(listOf("/raw/page-1.jpg", "/thumb/created-session/page-1.jpg"), fileRepository.deletedFiles)
-        assertTrue(scanRepository.addedPages.isEmpty())
-    }
-
-    @Test
-    fun thumbnailFailureDeletesCurrentFilesAndRollsBackPriorImportedPages() = runBlocking {
-        val scanRepository = FakeScanRepository()
-        val fileRepository = FakeFileRepository()
-        val imageProcessingRepository = FakeImageProcessingRepository().apply {
-            errorsByInputPath["/raw/page-2.jpg"] = AppResult.Error(
-                message = "Thumbnail could not be generated.",
-                category = AppErrorCategory.PROCESSING
-            )
-        }
-
-        val result = useCase(
-            scanRepository = scanRepository,
-            fileRepository = fileRepository,
-            imageProcessingRepository = imageProcessingRepository,
-            idProvider = SequenceIdProvider(listOf("page-1", "page-2"))
-        )(
-            sessionId = null,
-            sourceUris = listOf("content://first", "content://second"),
-            scanMode = ScanMode.DOCUMENT
-        )
-
-        assertEquals(AppErrorCategory.PROCESSING, result.errorOrNull()?.category)
-        assertEquals(listOf("page-1"), scanRepository.deletedPageIds)
         assertEquals(
-            listOf("/raw/page-2.jpg", "/thumb/created-session/page-2.jpg"),
+            listOf("/raw/created-session/page-1.jpg", "/thumb/created-session/page-1.jpg"),
             fileRepository.deletedFiles
         )
-        assertEquals(listOf("/raw/page-1.jpg"), imageProcessingRepository.detectedInputPaths)
-    }
-
-    @Test
-    fun importPersistsDetectedDocumentCorners() = runBlocking {
-        val detectedCorners = sampleCorners()
-        val scanRepository = FakeScanRepository()
-        val imageProcessingRepository = FakeImageProcessingRepository().apply {
-            detectionResultsByInputPath["/raw/page-1.jpg"] = AppResult.Success(detectedCorners)
-        }
-
-        val result = useCase(
-            scanRepository = scanRepository,
-            imageProcessingRepository = imageProcessingRepository,
-            idProvider = SequenceIdProvider(listOf("page-1"))
-        )(
-            sessionId = null,
-            sourceUris = listOf("content://first"),
-            scanMode = ScanMode.DOCUMENT
-        )
-
-        assertEquals(detectedCorners, result.getOrNull()?.importedPages?.single()?.corners)
-        assertEquals(detectedCorners, scanRepository.addedPages.single().corners)
-    }
-
-    @Test
-    fun documentDetectionFailureStillPersistsImportedPageWithoutCorners() = runBlocking {
-        val scanRepository = FakeScanRepository()
-        val imageProcessingRepository = FakeImageProcessingRepository().apply {
-            detectionResultsByInputPath["/raw/page-1.jpg"] = AppResult.Error(
-                message = "Document boundary detection failed.",
-                category = AppErrorCategory.PROCESSING
-            )
-        }
-
-        val result = useCase(
-            scanRepository = scanRepository,
-            imageProcessingRepository = imageProcessingRepository,
-            idProvider = SequenceIdProvider(listOf("page-1"))
-        )(
-            sessionId = null,
-            sourceUris = listOf("content://first"),
-            scanMode = ScanMode.DOCUMENT
-        )
-
-        assertEquals(null, result.errorOrNull())
-        assertEquals(null, result.getOrNull()?.importedPages?.single()?.corners)
-        assertEquals(null, scanRepository.addedPages.single().corners)
+        assertTrue(scanRepository.addedPages.isEmpty())
     }
 
     private fun useCase(
         scanRepository: FakeScanRepository = FakeScanRepository(),
-        devicePhotoRepository: FakeDevicePhotoRepository = FakeDevicePhotoRepository(),
         fileRepository: FakeFileRepository = FakeFileRepository(),
         imageProcessingRepository: ImageProcessingRepository = FakeImageProcessingRepository(),
-        idProvider: IdProvider = SequenceIdProvider(listOf("page-1", "page-2", "page-3")),
+        idProvider: IdProvider = SequenceIdProvider(listOf("page-1", "page-2")),
         timeProvider: TimeProvider = FixedTimeProvider(timestampMillis = 1L)
-    ): ImportDevicePhotosUseCase = ImportDevicePhotosUseCase(
+    ): CapturePageUseCase = CapturePageUseCase(
         scanRepository = scanRepository,
-        devicePhotoRepository = devicePhotoRepository,
         fileRepository = fileRepository,
         imageProcessingRepository = imageProcessingRepository,
         idProvider = idProvider,
@@ -292,9 +274,9 @@ class ImportDevicePhotosUseCaseTest {
         pages = pages
     )
 
-    private fun samplePage(id: String, pageIndex: Int): ScannedPage = ScannedPage(
+    private fun samplePage(id: String, sessionId: String = "session-id", pageIndex: Int): ScannedPage = ScannedPage(
         id = id,
-        sessionId = "session-id",
+        sessionId = sessionId,
         pageIndex = pageIndex,
         originalImagePath = "/raw/$id.jpg",
         processedImagePath = null,
@@ -316,7 +298,6 @@ class ImportDevicePhotosUseCaseTest {
     private class FakeScanRepository(var latestSession: ScanSession? = null) : ScanRepository {
         val sessionsById: MutableMap<String, ScanSession> = mutableMapOf()
         val addedPages: MutableList<ScannedPage> = mutableListOf()
-        val deletedPageIds: MutableList<String> = mutableListOf()
         val addPageErrorsById: MutableMap<String, AppResult.Error> = mutableMapOf()
         var createSessionCalls = 0
         var createdScanMode: ScanMode? = null
@@ -351,10 +332,7 @@ class ImportDevicePhotosUseCaseTest {
 
         override suspend fun updatePage(page: ScannedPage): AppResult<Unit> = AppResult.Success(Unit)
 
-        override suspend fun deletePage(pageId: String): AppResult<Unit> {
-            deletedPageIds += pageId
-            return AppResult.Success(Unit)
-        }
+        override suspend fun deletePage(pageId: String): AppResult<Unit> = AppResult.Success(Unit)
 
         override suspend fun reorderPages(sessionId: String, orderedPageIds: List<String>): AppResult<Unit> =
             AppResult.Success(Unit)
@@ -363,34 +341,10 @@ class ImportDevicePhotosUseCaseTest {
             AppResult.Success(Unit)
     }
 
-    private class FakeDevicePhotoRepository : DevicePhotoRepository {
-        val importedImagesByUri: MutableMap<String, ImportedRawImage> = mutableMapOf()
-        val errorsByUri: MutableMap<String, AppResult.Error> = mutableMapOf()
-        val requests: MutableList<ImportRequest> = mutableListOf()
-
-        override suspend fun importRawPhoto(
-            sessionId: String,
-            pageId: String,
-            sourceUri: String
-        ): AppResult<ImportedRawImage> {
-            requests += ImportRequest(sessionId = sessionId, pageId = pageId, sourceUri = sourceUri)
-            errorsByUri[sourceUri]?.let { error -> return error }
-            return AppResult.Success(
-                importedImagesByUri[sourceUri] ?: ImportedRawImage(
-                    path = "/raw/$pageId.jpg",
-                    width = 100,
-                    height = 200
-                )
-            )
-        }
-    }
-
-    private data class ImportRequest(val sessionId: String, val pageId: String, val sourceUri: String)
-
-    private class FakeFileRepository : FileRepository {
+    private class FakeFileRepository(private val storageResult: AppResult<Unit> = AppResult.Success(Unit)) :
+        FileRepository {
         val deletedFiles: MutableList<String> = mutableListOf()
         var requiredBytes: Long? = null
-        var storageAvailabilityResult: AppResult<Unit> = AppResult.Success(Unit)
 
         override fun createSessionImagePath(sessionId: String, suffix: String): String = "/raw/$sessionId/$suffix.jpg"
 
@@ -403,7 +357,7 @@ class ImportDevicePhotosUseCaseTest {
 
         override suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit> {
             this.requiredBytes = requiredBytes
-            return storageAvailabilityResult
+            return storageResult
         }
 
         override suspend fun deleteFile(path: String): AppResult<Unit> {
@@ -437,14 +391,15 @@ class ImportDevicePhotosUseCaseTest {
         override fun now(): Long = timestampMillis
     }
 
-    private class FakeImageProcessingRepository : ImageProcessingRepository {
-        val errorsByInputPath: MutableMap<String, AppResult.Error> = mutableMapOf()
-        val detectionResultsByInputPath: MutableMap<String, AppResult<PageCorners?>> = mutableMapOf()
+    private class FakeImageProcessingRepository(
+        private val thumbnailResult: AppResult<String> = AppResult.Success(""),
+        private val detectionResult: AppResult<PageCorners?> = AppResult.Success(null)
+    ) : ImageProcessingRepository {
         val detectedInputPaths: MutableList<String> = mutableListOf()
 
         override suspend fun detectDocument(inputPath: String): AppResult<PageCorners?> {
             detectedInputPaths += inputPath
-            return detectionResultsByInputPath[inputPath] ?: AppResult.Success(null)
+            return detectionResult
         }
 
         override suspend fun processPage(
@@ -458,9 +413,10 @@ class ImportDevicePhotosUseCaseTest {
             category = AppErrorCategory.PROCESSING
         )
 
-        override suspend fun generateThumbnail(inputPath: String, outputPath: String): AppResult<String> {
-            errorsByInputPath[inputPath]?.let { error -> return error }
-            return AppResult.Success(outputPath)
-        }
+        override suspend fun generateThumbnail(inputPath: String, outputPath: String): AppResult<String> =
+            when (thumbnailResult) {
+                is AppResult.Error -> thumbnailResult
+                is AppResult.Success -> AppResult.Success(outputPath)
+            }
     }
 }

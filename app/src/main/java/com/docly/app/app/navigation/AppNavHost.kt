@@ -22,6 +22,7 @@ import com.docly.app.feature.library.LibraryViewModel
 import com.docly.app.feature.metadata.MetadataScreen
 import com.docly.app.feature.metadata.MetadataViewModel
 import com.docly.app.feature.review.ReviewScreen
+import com.docly.app.feature.review.ReviewUiEffect
 import com.docly.app.feature.review.ReviewViewModel
 import com.docly.app.feature.scanner.ScannerScreen
 import com.docly.app.feature.scanner.ScannerUiEffect
@@ -54,9 +55,6 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
             ScannerScreen(
                 uiState = uiState,
                 onEvent = viewModel::onEvent,
-                onReviewPlaceholderSession = {
-                    navController.navigate(ReviewRoute(PLACEHOLDER_SESSION_ID))
-                },
                 onOpenLibrary = {
                     navController.navigate(LibraryRoute) {
                         launchSingleTop = true
@@ -66,10 +64,32 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
         }
 
         composable<ReviewRoute> { backStackEntry ->
-            hiltViewModel<ReviewViewModel>(backStackEntry)
+            val viewModel = hiltViewModel<ReviewViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val route = backStackEntry.toRoute<ReviewRoute>()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is ReviewUiEffect.NavigateBackToScanner -> {
+                            navController.navigate(ScannerRoute) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        is ReviewUiEffect.NavigateToEditor -> {
+                            navController.navigate(EditorRoute(effect.sessionId))
+                        }
+
+                        is ReviewUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
             ReviewScreen(
-                sessionId = route.sessionId,
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
                 onEditPages = {
                     navController.navigate(EditorRoute(route.sessionId))
                 },
@@ -78,10 +98,11 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
         }
 
         composable<EditorRoute> { backStackEntry ->
-            hiltViewModel<EditorViewModel>(backStackEntry)
+            val viewModel = hiltViewModel<EditorViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val route = backStackEntry.toRoute<EditorRoute>()
             EditorScreen(
-                sessionId = route.sessionId,
+                uiState = uiState,
                 onEditMetadata = {
                     navController.navigate(MetadataRoute(route.sessionId))
                 },
@@ -116,8 +137,10 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
         }
 
         composable<LibraryRoute> {
-            hiltViewModel<LibraryViewModel>()
+            val viewModel = hiltViewModel<LibraryViewModel>()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             LibraryScreen(
+                uiState = uiState,
                 onStartScanner = {
                     navController.navigate(ScannerRoute) {
                         launchSingleTop = true
