@@ -1,6 +1,7 @@
 package com.docly.app.data.repository
 
 import com.docly.app.core.image.DocumentDetector
+import com.docly.app.core.image.ImageEnhancer
 import com.docly.app.core.image.PerspectiveTransformer
 import com.docly.app.core.image.ThumbnailGenerator
 import com.docly.app.core.result.AppErrorCategory
@@ -15,6 +16,7 @@ import javax.inject.Inject
 class ImageProcessingRepositoryImpl @Inject constructor(
     private val documentDetector: DocumentDetector,
     private val perspectiveTransformer: PerspectiveTransformer,
+    private val imageEnhancer: ImageEnhancer,
     private val thumbnailGenerator: ThumbnailGenerator
 ) : ImageProcessingRepository {
     override suspend fun detectDocument(inputPath: String): AppResult<PageCorners?> = documentDetector.detect(inputPath)
@@ -33,25 +35,48 @@ class ImageProcessingRepositoryImpl @Inject constructor(
             )
         }
 
+        val warpedOutputPath = processedOutputPath.toWarpTemporaryPath()
+        val generatedPaths = listOf(warpedOutputPath, processedOutputPath, thumbnailOutputPath)
         val warpResult = when (
             val result = perspectiveTransformer.warp(
                 imagePath = inputPath,
                 corners = corners,
-                outputPath = processedOutputPath
+                outputPath = warpedOutputPath
             )
         ) {
-            is AppResult.Error -> return result
+            is AppResult.Error -> {
+                generatedPaths.deleteFiles()
+                return result
+            }
+
             is AppResult.Success -> result.data
         }
 
+        val enhancedPath = when (
+            val result = imageEnhancer.enhance(
+                inputPath = warpResult.outputPath,
+                outputPath = processedOutputPath,
+                scanMode = scanMode
+            )
+        ) {
+            is AppResult.Error -> {
+                generatedPaths.deleteFiles()
+                return result
+            }
+
+            is AppResult.Success -> result.data
+        }
+        val generatedPathsAfterEnhancement = generatedPaths + enhancedPath
+        File(warpResult.outputPath).delete()
+
         val thumbnailPath = when (
             val result = thumbnailGenerator.generate(
-                inputPath = warpResult.outputPath,
+                inputPath = enhancedPath,
                 outputPath = thumbnailOutputPath
             )
         ) {
             is AppResult.Error -> {
-                File(warpResult.outputPath).delete()
+                generatedPathsAfterEnhancement.deleteFiles()
                 return result
             }
 
@@ -60,7 +85,7 @@ class ImageProcessingRepositoryImpl @Inject constructor(
 
         return AppResult.Success(
             ProcessedPageResult(
-                processedImagePath = warpResult.outputPath,
+                processedImagePath = enhancedPath,
                 thumbnailPath = thumbnailPath,
                 detectedCorners = corners,
                 width = warpResult.width,
@@ -71,4 +96,22 @@ class ImageProcessingRepositoryImpl @Inject constructor(
 
     override suspend fun generateThumbnail(inputPath: String, outputPath: String): AppResult<String> =
         thumbnailGenerator.generate(inputPath = inputPath, outputPath = outputPath)
+
+    private fun String.toWarpTemporaryPath(): String {
+        val file = File(this)
+        val extension = file.extension.ifBlank { DEFAULT_PROCESSED_EXTENSION }
+        val temporaryFileName = "${file.nameWithoutExtension}_warp_tmp.$extension"
+        return (file.parentFile?.let { parent -> File(parent, temporaryFileName) } ?: File(temporaryFileName))
+            .absolutePath
+    }
+
+    private fun List<String>.deleteFiles() {
+        distinct()
+            .filter { path -> path.isNotBlank() }
+            .forEach { path -> File(path).delete() }
+    }
+
+    private companion object {
+        const val DEFAULT_PROCESSED_EXTENSION = "jpg"
+    }
 }

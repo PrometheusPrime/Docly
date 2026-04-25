@@ -397,3 +397,42 @@ Validation:
 - `./gradlew assembleDebug` completed with `BUILD SUCCESSFUL in 2m 5s`.
 - `./gradlew assembleDebugAndroidTest` completed with `BUILD SUCCESSFUL in 1m 32s`.
 - `adb devices` reported no attached devices, so connected/manual device validation was not run in this session.
+
+## 2026-04-25 - Phase 18 Enhancement Modes
+
+Scope:
+
+- Replaced the placeholder `ImageEnhancer` with an OpenCV-backed `OpenCvImageEnhancer`.
+- Wired page processing as perspective warp to a deterministic temporary image, enhancement into the final processed image, and thumbnail generation from that enhanced output.
+- Added Document, Mixed, and Color enhancement modes:
+  - Document mode uses grayscale conversion, median denoise, adaptive thresholding, and light sharpening.
+  - Mixed mode uses bilateral denoise, LAB luminance contrast enhancement, and mild sharpening.
+  - Color mode uses simple gray-world white balance, mild bilateral denoise, and light sharpening.
+- Added a shared segmented scan-mode selector to Scanner and Review.
+- Kept Review reprocessing explicit: mode changes update the selected mode, and the existing Apply action persists the new mode through processing.
+
+Implementation decisions:
+
+- Processed images remain JPEGs to match the existing `FileRepository.createProcessedImagePath()` contract.
+- `ReviewUiState` now tracks selected and applied scan modes separately so the UI can represent pending mode changes without auto-processing.
+- Failed warp, enhancement, or thumbnail generation deletes temporary and newly generated files before returning the processing error.
+- The temporary warp path is derived from the final processed path using the `_warp_tmp` suffix.
+- No curated manual QA image dataset was available in this terminal session; generated bitmap fixtures were used for automated on-device comparison across modes.
+
+Tests:
+
+- Added JVM coverage for `ImageProcessingRepositoryImpl`: warp/enhance/thumbnail ordering, selected mode routing, and cleanup for warp, enhancer, and thumbnail failures.
+- Expanded `ReviewViewModel` JVM coverage for explicit scan-mode selection, apply-time persistence, and failure behavior that preserves the prior processed state.
+- Expanded Scanner and Review Compose tests for mode selector rendering, click dispatch, and disabled states while processing/importing.
+- Added Android instrumentation coverage for `OpenCvImageEnhancer` using generated bitmap fixtures to verify Document mode produces high-contrast grayscale output and Mixed/Color preserve more chroma than Document.
+
+Validation:
+
+- `./gradlew --no-daemon :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL in 10m 57s`.
+- `./gradlew --no-daemon :app:compileDebugUnitTestKotlin :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL in 5m 3s`.
+- `./gradlew --no-daemon :app:ktlintFormat --console=plain` completed with `BUILD SUCCESSFUL in 2m 3s`.
+- `./gradlew --no-daemon :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 25s`.
+- `./gradlew --no-daemon :app:ktlintCheck :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 6m 34s`.
+- `adb devices` reported one attached device: `1268015548000502`.
+- `./gradlew --no-daemon :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 58s`; 40 tests passed on `TECNO KL5 - 14`.
+- Final combined validation after cleanup hardening: `./gradlew --no-daemon :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 8m 1s`; 40 connected tests passed on `TECNO KL5 - 14`.

@@ -44,7 +44,7 @@ class ReviewViewModel @Inject constructor(
             ReviewUiEvent.OnLoad -> loadSession()
 
             is ReviewUiEvent.OnScanModeChanged -> _uiState.update { state ->
-                state.copy(selectedScanMode = event.scanMode)
+                state.copy(selectedScanMode = event.scanMode, errorMessage = null)
             }
 
             is ReviewUiEvent.OnCornersChanged -> _uiState.update { state ->
@@ -103,6 +103,7 @@ class ReviewViewModel @Inject constructor(
                             imageWidth = latestPage?.width ?: 0,
                             imageHeight = latestPage?.height ?: 0,
                             selectedScanMode = latestPage?.scanMode ?: session?.scanMode ?: state.selectedScanMode,
+                            appliedScanMode = latestPage?.scanMode ?: session?.scanMode ?: state.appliedScanMode,
                             detectedCorners = latestPage?.corners,
                             editableCorners = latestPage?.corners ?: fallbackCorners,
                             rotationDegrees = latestPage?.rotationDegrees ?: 0,
@@ -172,6 +173,7 @@ class ReviewViewModel @Inject constructor(
                             imageWidth = result.data.width,
                             imageHeight = result.data.height,
                             selectedScanMode = result.data.scanMode,
+                            appliedScanMode = result.data.scanMode,
                             detectedCorners = result.data.corners,
                             editableCorners = result.data.corners,
                             rotationDegrees = result.data.rotationDegrees,

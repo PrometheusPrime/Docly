@@ -46,7 +46,7 @@ class ReviewViewModelTest {
     fun loadSessionUsesDetectedCornersWhenPresent() = runTest {
         val corners = sampleCorners()
         val viewModel = viewModel(
-            scanRepository = FakeScanRepository(page = samplePage(corners = corners))
+            scanRepository = FakeScanRepository(page = samplePage(corners = corners, scanMode = ScanMode.MIXED))
         )
         advanceUntilIdle()
 
@@ -57,6 +57,8 @@ class ReviewViewModelTest {
         assertEquals(1400, state.imageHeight)
         assertEquals(corners, state.detectedCorners)
         assertEquals(corners, state.editableCorners)
+        assertEquals(ScanMode.MIXED, state.selectedScanMode)
+        assertEquals(ScanMode.MIXED, state.appliedScanMode)
         assertFalse(state.isProcessing)
     }
 
@@ -113,6 +115,41 @@ class ReviewViewModelTest {
     }
 
     @Test
+    fun scanModeChangeUpdatesSelectionOnlyUntilApply() = runTest {
+        val scanRepository = FakeScanRepository(page = samplePage(corners = sampleCorners()))
+        val viewModel = viewModel(scanRepository = scanRepository)
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnScanModeChanged(ScanMode.COLOR))
+
+        val state = viewModel.uiState.value
+        assertEquals(ScanMode.COLOR, state.selectedScanMode)
+        assertEquals(ScanMode.DOCUMENT, state.appliedScanMode)
+        assertTrue(state.hasPendingScanModeChange)
+        assertTrue(scanRepository.updatedPages.isEmpty())
+    }
+
+    @Test
+    fun applyCropPersistsSelectedScanMode() = runTest {
+        val scanRepository = FakeScanRepository(page = samplePage(corners = sampleCorners()))
+        val viewModel = viewModel(
+            scanRepository = scanRepository,
+            idProvider = FixedIdProvider("crop-1")
+        )
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnScanModeChanged(ScanMode.COLOR))
+        viewModel.onEvent(ReviewUiEvent.OnReprocessClicked)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(ScanMode.COLOR, scanRepository.updatedPages.single().scanMode)
+        assertEquals(ScanMode.COLOR, state.selectedScanMode)
+        assertEquals(ScanMode.COLOR, state.appliedScanMode)
+        assertFalse(state.hasPendingScanModeChange)
+    }
+
+    @Test
     fun processingFailureShowsReadableErrorAndLeavesExistingPageState() = runTest {
         val viewModel = viewModel(
             scanRepository = FakeScanRepository(page = samplePage(corners = sampleCorners())),
@@ -133,6 +170,37 @@ class ReviewViewModelTest {
         assertEquals("We could not process this page. Please try again.", viewModel.uiState.value.errorMessage)
         assertEquals(null, viewModel.uiState.value.processedImagePath)
         assertTrue(effect.await() is ReviewUiEffect.ShowToast)
+    }
+
+    @Test
+    fun processingFailureAfterModeChangeLeavesPriorProcessedState() = runTest {
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(
+                page = samplePage(
+                    corners = sampleCorners(),
+                    processedImagePath = "/processed/session-id/old.jpg",
+                    thumbnailPath = "/thumb/session-id/old.jpg"
+                )
+            ),
+            imageProcessingRepository = FakeImageProcessingRepository(
+                processResult = AppResult.Error(
+                    message = "Enhancement failed.",
+                    category = AppErrorCategory.PROCESSING
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnScanModeChanged(ScanMode.COLOR))
+        viewModel.onEvent(ReviewUiEvent.OnReprocessClicked)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("We could not process this page. Please try again.", state.errorMessage)
+        assertEquals("/processed/session-id/old.jpg", state.processedImagePath)
+        assertEquals("/thumb/session-id/old.jpg", state.thumbnailPath)
+        assertEquals(ScanMode.COLOR, state.selectedScanMode)
+        assertEquals(ScanMode.DOCUMENT, state.appliedScanMode)
     }
 
     @Test
@@ -180,15 +248,20 @@ class ReviewViewModelTest {
         pages = listOf(page)
     )
 
-    private fun samplePage(corners: PageCorners?): ScannedPage = ScannedPage(
+    private fun samplePage(
+        corners: PageCorners?,
+        scanMode: ScanMode = ScanMode.DOCUMENT,
+        processedImagePath: String? = null,
+        thumbnailPath: String? = null
+    ): ScannedPage = ScannedPage(
         id = "page-id",
         sessionId = "session-id",
         pageIndex = 0,
         originalImagePath = "/raw/page.jpg",
-        processedImagePath = null,
-        thumbnailPath = null,
+        processedImagePath = processedImagePath,
+        thumbnailPath = thumbnailPath,
         rotationDegrees = 0,
-        scanMode = ScanMode.DOCUMENT,
+        scanMode = scanMode,
         width = 1000,
         height = 1400,
         corners = corners,

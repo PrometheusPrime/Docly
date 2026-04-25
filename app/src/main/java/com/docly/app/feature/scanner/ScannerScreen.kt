@@ -64,6 +64,7 @@ import com.docly.app.core.camera.CameraPreviewSession
 import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.ui.components.DoclyEmptyContent
 import com.docly.app.ui.components.DoclyScreenScaffold
+import com.docly.app.ui.components.ScanModeSelector
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 import dagger.hilt.android.EntryPointAccessors
@@ -250,6 +251,11 @@ fun ScannerScreenContent(
             text = "Start with the camera preview or import existing photos.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ScanModeSelector(
+            selectedScanMode = uiState.scanMode,
+            onScanModeSelected = { scanMode -> onEvent(ScannerUiEvent.OnScanModeChanged(scanMode)) },
+            enabled = !uiState.isCapturing && !uiState.isImporting
         )
         CameraPermissionAndPreviewSection(
             uiState = uiState,

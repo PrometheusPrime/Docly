@@ -6,8 +6,8 @@ import com.docly.app.core.image.BitmapLoader
 import com.docly.app.core.image.DefaultOpenCvInitializer
 import com.docly.app.core.image.DocumentDetector
 import com.docly.app.core.image.ImageEnhancer
-import com.docly.app.core.image.NotImplementedImageEnhancer
 import com.docly.app.core.image.OpenCvDocumentDetector
+import com.docly.app.core.image.OpenCvImageEnhancer
 import com.docly.app.core.image.OpenCvInitializer
 import com.docly.app.core.image.OpenCvPerspectiveTransformer
 import com.docly.app.core.image.PerspectiveTransformer
@@ -39,7 +39,7 @@ abstract class ImageProcessingModule {
 
     @Binds
     @Singleton
-    abstract fun bindImageEnhancer(impl: NotImplementedImageEnhancer): ImageEnhancer
+    abstract fun bindImageEnhancer(impl: OpenCvImageEnhancer): ImageEnhancer
 
     @Binds
     @Singleton

@@ -6,12 +6,15 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PointFSerializable
+import com.docly.app.domain.model.ScanMode
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -120,6 +123,52 @@ class ScannerScreenStateTest {
 
         composeRule.onNodeWithTag(DoclyTestTags.DOCUMENT_BOUNDARY_OVERLAY)
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun scanModeSelectorShowsModesAndDispatchesSelection() {
+        var selectedScanMode: ScanMode? = null
+
+        composeRule.setContent {
+            DoclyTheme {
+                ScannerScreenContent(
+                    uiState = ScannerUiState(scanMode = ScanMode.DOCUMENT),
+                    onEvent = { event ->
+                        if (event is ScannerUiEvent.OnScanModeChanged) {
+                            selectedScanMode = event.scanMode
+                        }
+                    },
+                    onOpenLibrary = {},
+                    onRequestCameraPermission = {},
+                    onOpenCameraSettings = {},
+                    onImportSinglePhoto = {},
+                    onImportMultiplePhotos = {},
+                    isCaptureAvailable = false,
+                    onCapture = {},
+                    cameraPreview = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_SELECTOR).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_DOCUMENT_OPTION).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_MIXED_OPTION).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_COLOR_OPTION)
+            .assertIsDisplayed()
+            .performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(ScanMode.COLOR, selectedScanMode)
+        }
+    }
+
+    @Test
+    fun importStateDisablesScanModeSelection() {
+        renderScannerContent(uiState = ScannerUiState(isImporting = true))
+
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_DOCUMENT_OPTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_MIXED_OPTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_COLOR_OPTION).assertIsNotEnabled()
     }
 
     private fun renderScannerContent(uiState: ScannerUiState, isCaptureAvailable: Boolean = false) {

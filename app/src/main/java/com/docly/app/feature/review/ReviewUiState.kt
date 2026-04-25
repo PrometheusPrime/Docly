@@ -12,6 +12,7 @@ data class ReviewUiState(
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,
     val selectedScanMode: ScanMode = ScanMode.DOCUMENT,
+    val appliedScanMode: ScanMode = ScanMode.DOCUMENT,
     val detectedCorners: PageCorners? = null,
     val editableCorners: PageCorners? = null,
     val isProcessing: Boolean = false,
@@ -29,6 +30,12 @@ data class ReviewUiState(
 
     val canApplyCrop: Boolean
         get() = hasCropEditor && !isProcessing && !isSaving
+
+    val canSelectScanMode: Boolean
+        get() = currentPageId != null && !isProcessing && !isSaving
+
+    val hasPendingScanModeChange: Boolean
+        get() = selectedScanMode != appliedScanMode
 
     val canResetToDetected: Boolean
         get() = detectedCorners != null && !isProcessing && !isSaving

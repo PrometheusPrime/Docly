@@ -10,12 +10,15 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PointFSerializable
+import com.docly.app.domain.model.ScanMode
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Rule
@@ -59,6 +62,39 @@ class ReviewScreenStateTest {
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESET_DETECTED_ACTION).assertIsNotEnabled()
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESET_FULL_IMAGE_ACTION).assertIsNotEnabled()
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_APPLY_CROP_ACTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_DOCUMENT_OPTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_MIXED_OPTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_COLOR_OPTION).assertIsNotEnabled()
+    }
+
+    @Test
+    fun scanModeSelectorShowsModesAndDispatchesSelection() {
+        var selectedScanMode: ScanMode? = null
+
+        composeRule.setContent {
+            DoclyTheme {
+                ReviewScreen(
+                    uiState = cropUiState(selectedScanMode = ScanMode.DOCUMENT),
+                    onEvent = { event ->
+                        if (event is ReviewUiEvent.OnScanModeChanged) {
+                            selectedScanMode = event.scanMode
+                        }
+                    },
+                    onEditPages = {},
+                    onNavigateBack = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_SELECTOR).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_DOCUMENT_OPTION).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_MIXED_OPTION)
+            .assertIsDisplayed()
+            .performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(ScanMode.MIXED, selectedScanMode)
+        }
     }
 
     @Test
@@ -119,13 +155,17 @@ class ReviewScreenStateTest {
     private fun cropUiState(
         detectedCorners: PageCorners? = sampleCorners(),
         editableCorners: PageCorners? = sampleCorners(),
-        isProcessing: Boolean = false
+        isProcessing: Boolean = false,
+        selectedScanMode: ScanMode = ScanMode.DOCUMENT,
+        appliedScanMode: ScanMode = ScanMode.DOCUMENT
     ): ReviewUiState = ReviewUiState(
         sessionId = "session-id",
         currentPageId = "page-id",
         rawImagePath = "/raw/page.jpg",
         imageWidth = 1000,
         imageHeight = 1400,
+        selectedScanMode = selectedScanMode,
+        appliedScanMode = appliedScanMode,
         detectedCorners = detectedCorners,
         editableCorners = editableCorners,
         isProcessing = isProcessing

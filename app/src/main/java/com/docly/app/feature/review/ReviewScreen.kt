@@ -20,6 +20,7 @@ import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.ui.components.DoclyEmptyContent
 import com.docly.app.ui.components.DoclyImageThumbnail
 import com.docly.app.ui.components.DoclyScreenScaffold
+import com.docly.app.ui.components.ScanModeSelector
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 
@@ -52,6 +53,13 @@ fun ReviewScreen(
                 text = uiState.errorMessage,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error
+            )
+        }
+        if (uiState.currentPageId != null) {
+            ScanModeSelector(
+                selectedScanMode = uiState.selectedScanMode,
+                onScanModeSelected = { scanMode -> onEvent(ReviewUiEvent.OnScanModeChanged(scanMode)) },
+                enabled = uiState.canSelectScanMode
             )
         }
         ReviewPreview(uiState = uiState, onEvent = onEvent)
@@ -139,9 +147,16 @@ private fun CropActions(uiState: ReviewUiState, onEvent: (ReviewUiEvent) -> Unit
             .fillMaxWidth()
             .testTag(DoclyTestTags.REVIEW_APPLY_CROP_ACTION)
     ) {
-        Text(text = if (uiState.isProcessing) "Applying..." else "Apply crop")
+        Text(text = uiState.applyActionLabel)
     }
 }
+
+private val ReviewUiState.applyActionLabel: String
+    get() = when {
+        isProcessing -> "Applying..."
+        hasPendingScanModeChange -> "Apply mode"
+        else -> "Apply crop"
+    }
 
 @Preview(showBackground = true)
 @Composable
