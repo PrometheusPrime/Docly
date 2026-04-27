@@ -531,3 +531,64 @@ Validation:
 - `adb devices` reported one attached device: `1268015548000502`.
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.metadata.MetadataScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 4m 13s`; 5 metadata connected tests passed on `TECNO KL5 - 14`.
 - Full `:app:connectedDebugAndroidTest` was attempted twice after the metadata test fix. One run stalled at 5/52 tests and a later bounded run stalled at 18/52 tests; both were stopped and the app/test processes were force-stopped. The targeted Phase 21 connected coverage passed, but the full connected suite was not recorded as passing in this session.
+
+## 2026-04-27 - Phase 22 PDF Generation Service
+
+Scope:
+
+- Replaced the placeholder PDF generator with `AndroidPdfGenerator` backed by Android `PdfDocument`.
+- Added `PdfGenerationOptions` with an A4-fit page policy and configurable render quality while keeping the existing repository/use-case call path stable.
+- Rendered one source image per PDF page, choosing A4 portrait or landscape from the decoded image orientation and center-fitting the bitmap on a white page while preserving aspect ratio.
+- Ran generation work through `DispatcherProvider`, recycled bitmaps after each page, closed `PdfDocument` safely, and removed partial output files on failures.
+- Updated Hilt to bind the real PDF generator.
+
+Implementation decisions:
+
+- The default export policy is A4 fit using 595 x 842 PDF points.
+- `GeneratePdfUseCase` still chooses processed image paths before original image paths and delegates ordered paths to the PDF repository.
+- Missing/unreadable images, blank output paths, and write/render errors return `AppErrorCategory.PDF`.
+- Export UI, saved-document persistence, session export status changes, open/share actions, and external destinations remain Phase 23.
+
+Tests:
+
+- Added `AndroidPdfGeneratorTest` instrumentation coverage for generating a non-empty two-page PDF from fixture images, verifying page count with `PdfRenderer`, checking page order by rendered center colors, checking A4 portrait/landscape sizing, and ensuring missing input images return PDF errors without leaving output files.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintFormat --console=plain` completed with `BUILD SUCCESSFUL in 2m 14s` after the first `ktlintCheck` reported formatting issues in the new generator.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 2m 46s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 41m 22s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 37m 6s`.
+- `adb devices` reported no attached devices, so the targeted `AndroidPdfGeneratorTest` connected test and manual PDF viewer validation were not run in this session.
+
+## 2026-04-27 - Phase 23 Export, Open, and Share Flow
+
+Scope:
+
+- Replaced the placeholder export route with a state/effect-driven `ExportScreen` backed by `ExportViewModel`.
+- Added export readiness and orchestration use cases that load the scan session, validate metadata, require reviewed accepted pages, require processed image files to exist, generate the PDF, save a `SavedDocument`, and mark the scan session `EXPORTED`.
+- Added rollback for generated PDFs when saved-document persistence or session status update fails; status-update rollback also attempts to delete the saved-document row.
+- Added Android `FileProvider` support and `PdfIntentFactory` for safe app-owned PDF open/share content URIs.
+- Wired export effects in navigation so open/share use external Android activities and show a toast if no handler is available.
+
+Implementation decisions:
+
+- Export remains app-storage-first under `files/documents/pdf`; no SAF or MediaStore destination picker was added.
+- Saved document titles use the generated PDF filename without the `.pdf` suffix.
+- The first exported page thumbnail becomes the saved document thumbnail.
+- Export blocks pending pages and pages without an existing processed image rather than falling back to raw images.
+
+Tests:
+
+- Added JVM coverage for export readiness failures, PDF failure, save/status rollback, successful `SavedDocument` creation, session export marking, and export ViewModel open/share effects.
+- Added Compose UI coverage for loading, not-ready, ready, exporting, and exported export-screen states.
+- Added Android integration coverage that creates fixture processed images, generates a PDF, saves the document in Room, and verifies the session is marked exported.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintFormat --console=plain` completed with `BUILD SUCCESSFUL in 3m 17s`.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 1m 39s`.
+- First `:app:testDebugUnitTest` attempt failed because `ExportViewModelTest` exposed a private JUnit rule type; the rule visibility was fixed.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 7m 46s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 9m 34s`.
+- `adb devices` reported no attached devices, so targeted connected export/open/share tests and manual viewer/share-sheet validation were not run in this session.

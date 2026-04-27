@@ -1,5 +1,8 @@
 package com.docly.app.app.navigation
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -13,10 +16,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.docly.app.core.file.PdfIntentFactory
+import com.docly.app.core.result.AppResult
 import com.docly.app.feature.editor.EditorScreen
 import com.docly.app.feature.editor.EditorUiEffect
 import com.docly.app.feature.editor.EditorViewModel
 import com.docly.app.feature.export.ExportScreen
+import com.docly.app.feature.export.ExportUiEffect
 import com.docly.app.feature.export.ExportViewModel
 import com.docly.app.feature.library.LibraryScreen
 import com.docly.app.feature.library.LibraryViewModel
@@ -31,7 +37,11 @@ import com.docly.app.feature.scanner.ScannerUiEffect
 import com.docly.app.feature.scanner.ScannerViewModel
 
 @Composable
-fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController = rememberNavController()) {
+fun AppNavHost(
+    modifier: Modifier = Modifier,
+    navController: NavHostController = rememberNavController(),
+    pdfIntentFactory: PdfIntentFactory
+) {
     NavHost(
         navController = navController,
         startDestination = ScannerRoute(),
@@ -152,15 +162,44 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
         }
 
         composable<ExportRoute> { backStackEntry ->
-            hiltViewModel<ExportViewModel>(backStackEntry)
-            val route = backStackEntry.toRoute<ExportRoute>()
-            ExportScreen(
-                sessionId = route.sessionId,
-                onViewLibrary = {
-                    navController.navigate(LibraryRoute) {
-                        launchSingleTop = true
+            val viewModel = hiltViewModel<ExportViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is ExportUiEffect.NavigateToLibrary -> {
+                            navController.navigate(LibraryRoute) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        is ExportUiEffect.OpenPdf -> {
+                            context.startPdfIntent(
+                                intentResult = pdfIntentFactory.createOpenIntent(effect.pdfPath),
+                                noHandlerMessage = "No PDF viewer is available."
+                            )
+                        }
+
+                        is ExportUiEffect.SharePdf -> {
+                            context.startPdfIntent(
+                                intentResult = pdfIntentFactory.createShareIntent(
+                                    pdfPath = effect.pdfPath,
+                                    title = effect.title
+                                ),
+                                noHandlerMessage = "No app is available to share this PDF."
+                            )
+                        }
+
+                        is ExportUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
                     }
-                },
+                }
+            }
+            ExportScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
                 onNavigateBack = navController::popBackStack
             )
         }
@@ -176,6 +215,23 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
                     }
                 }
             )
+        }
+    }
+}
+
+private fun Context.startPdfIntent(intentResult: AppResult<Intent>, noHandlerMessage: String) {
+    when (intentResult) {
+        is AppResult.Error -> {
+            Toast.makeText(this, intentResult.message, Toast.LENGTH_SHORT).show()
+        }
+
+        is AppResult.Success -> {
+            val intent = intentResult.data
+            try {
+                startActivity(intent)
+            } catch (exception: ActivityNotFoundException) {
+                Toast.makeText(this, noHandlerMessage, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }

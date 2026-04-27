@@ -1,17 +1,25 @@
 package com.docly.app.core.pdf
 
-import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
-import javax.inject.Inject
 
 interface PdfGenerator {
-    suspend fun generate(pageImagePaths: List<String>, outputPdfPath: String): AppResult<String>
+    suspend fun generate(
+        pageImagePaths: List<String>,
+        outputPdfPath: String,
+        options: PdfGenerationOptions = PdfGenerationOptions()
+    ): AppResult<String>
 }
 
-class NotImplementedPdfGenerator @Inject constructor() : PdfGenerator {
-    override suspend fun generate(pageImagePaths: List<String>, outputPdfPath: String): AppResult<String> =
-        AppResult.Error(
-            message = "PDF generation is not implemented yet.",
-            category = AppErrorCategory.PDF
-        )
+data class PdfGenerationOptions(
+    val pagePolicy: PdfPagePolicy = PdfPagePolicy.A4Fit,
+    val renderQuality: PdfRenderQuality = PdfRenderQuality.High
+)
+
+sealed interface PdfPagePolicy {
+    data object A4Fit : PdfPagePolicy
+}
+
+enum class PdfRenderQuality(val maxLongEdgePx: Int) {
+    High(maxLongEdgePx = 2480),
+    Medium(maxLongEdgePx = 1600)
 }

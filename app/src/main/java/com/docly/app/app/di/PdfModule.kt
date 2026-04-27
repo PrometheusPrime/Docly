@@ -1,6 +1,6 @@
 package com.docly.app.app.di
 
-import com.docly.app.core.pdf.NotImplementedPdfGenerator
+import com.docly.app.core.pdf.AndroidPdfGenerator
 import com.docly.app.core.pdf.PdfGenerator
 import dagger.Binds
 import dagger.Module
@@ -13,5 +13,5 @@ import javax.inject.Singleton
 abstract class PdfModule {
     @Binds
     @Singleton
-    abstract fun bindPdfGenerator(impl: NotImplementedPdfGenerator): PdfGenerator
+    abstract fun bindPdfGenerator(impl: AndroidPdfGenerator): PdfGenerator
 }
