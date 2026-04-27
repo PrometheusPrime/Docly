@@ -292,6 +292,12 @@ class RoomRepositoryTest {
 
         val loadedAfterReorder = repository.getSession(session.id).successData()
         assertEquals(listOf("second-page", "first-page"), loadedAfterReorder?.pages?.map { it.id })
+
+        val duplicateResult = repository.reorderPages(session.id, listOf("second-page", "second-page"))
+        val missingResult = repository.reorderPages(session.id, listOf("second-page"))
+
+        assertEquals(AppErrorCategory.VALIDATION, duplicateResult.errorCategory())
+        assertEquals(AppErrorCategory.VALIDATION, missingResult.errorCategory())
     }
 
     @Test

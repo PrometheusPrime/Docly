@@ -11,5 +11,11 @@ data class MetadataUiState(
     val notes: String = "",
     val generatedFileName: String = "",
     val validationErrors: List<String> = emptyList(),
-    val isSaving: Boolean = false
-)
+    val isLoading: Boolean = false,
+    val isSaving: Boolean = false,
+    val isSessionAvailable: Boolean = true,
+    val errorMessage: String? = null
+) {
+    val canContinue: Boolean
+        get() = sessionId.isNotBlank() && isSessionAvailable && !isLoading && !isSaving
+}

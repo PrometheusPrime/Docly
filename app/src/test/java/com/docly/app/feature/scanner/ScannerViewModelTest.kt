@@ -1,5 +1,6 @@
 package com.docly.app.feature.scanner
 
+import androidx.lifecycle.SavedStateHandle
 import com.docly.app.core.camera.CameraCaptureResult
 import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.core.common.IdProvider
@@ -271,10 +272,23 @@ class ScannerViewModelTest {
         assertFalse(viewModel.uiState.value.isCapturing)
     }
 
+    @Test
+    fun savedSessionIdInitializesScannerStateForAdditionalPages() {
+        val viewModel = viewModel(sessionId = "existing-session")
+
+        assertEquals("existing-session", viewModel.uiState.value.sessionId)
+    }
+
     private fun viewModel(
+        sessionId: String? = null,
         capturePageUseCase: CapturePageUseCase = captureUseCase(),
         importDevicePhotosUseCase: ImportDevicePhotosUseCase = importUseCase()
     ): ScannerViewModel = ScannerViewModel(
+        savedStateHandle = if (sessionId == null) {
+            SavedStateHandle()
+        } else {
+            SavedStateHandle(mapOf("sessionId" to sessionId))
+        },
         capturePageUseCase = capturePageUseCase,
         importDevicePhotosUseCase = importDevicePhotosUseCase
     )

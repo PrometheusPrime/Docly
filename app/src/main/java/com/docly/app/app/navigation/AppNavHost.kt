@@ -14,12 +14,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.docly.app.feature.editor.EditorScreen
+import com.docly.app.feature.editor.EditorUiEffect
 import com.docly.app.feature.editor.EditorViewModel
 import com.docly.app.feature.export.ExportScreen
 import com.docly.app.feature.export.ExportViewModel
 import com.docly.app.feature.library.LibraryScreen
 import com.docly.app.feature.library.LibraryViewModel
 import com.docly.app.feature.metadata.MetadataScreen
+import com.docly.app.feature.metadata.MetadataUiEffect
 import com.docly.app.feature.metadata.MetadataViewModel
 import com.docly.app.feature.review.ReviewScreen
 import com.docly.app.feature.review.ReviewUiEffect
@@ -32,11 +34,11 @@ import com.docly.app.feature.scanner.ScannerViewModel
 fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController = rememberNavController()) {
     NavHost(
         navController = navController,
-        startDestination = ScannerRoute,
+        startDestination = ScannerRoute(),
         modifier = modifier
     ) {
-        composable<ScannerRoute> {
-            val viewModel = hiltViewModel<ScannerViewModel>()
+        composable<ScannerRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<ScannerViewModel>(backStackEntry)
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val context = LocalContext.current
             LaunchedEffect(viewModel) {
@@ -72,7 +74,7 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
                 viewModel.uiEffect.collect { effect ->
                     when (effect) {
                         is ReviewUiEffect.NavigateBackToScanner -> {
-                            navController.navigate(ScannerRoute) {
+                            navController.navigate(ScannerRoute(effect.sessionId)) {
                                 launchSingleTop = true
                             }
                         }
@@ -100,24 +102,51 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
         composable<EditorRoute> { backStackEntry ->
             val viewModel = hiltViewModel<EditorViewModel>(backStackEntry)
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val route = backStackEntry.toRoute<EditorRoute>()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is EditorUiEffect.NavigateToScanner -> {
+                            navController.navigate(ScannerRoute(effect.sessionId))
+                        }
+
+                        is EditorUiEffect.NavigateToMetadata -> {
+                            navController.navigate(MetadataRoute(effect.sessionId))
+                        }
+
+                        is EditorUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
             EditorScreen(
                 uiState = uiState,
-                onEditMetadata = {
-                    navController.navigate(MetadataRoute(route.sessionId))
-                },
+                onEvent = viewModel::onEvent,
                 onNavigateBack = navController::popBackStack
             )
         }
 
         composable<MetadataRoute> { backStackEntry ->
-            hiltViewModel<MetadataViewModel>(backStackEntry)
-            val route = backStackEntry.toRoute<MetadataRoute>()
+            val viewModel = hiltViewModel<MetadataViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is MetadataUiEffect.NavigateToExport -> {
+                            navController.navigate(ExportRoute(effect.sessionId))
+                        }
+
+                        is MetadataUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
             MetadataScreen(
-                sessionId = route.sessionId,
-                onExport = {
-                    navController.navigate(ExportRoute(route.sessionId))
-                },
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
                 onNavigateBack = navController::popBackStack
             )
         }
@@ -142,7 +171,7 @@ fun AppNavHost(modifier: Modifier = Modifier, navController: NavHostController =
             LibraryScreen(
                 uiState = uiState,
                 onStartScanner = {
-                    navController.navigate(ScannerRoute) {
+                    navController.navigate(ScannerRoute()) {
                         launchSingleTop = true
                     }
                 }

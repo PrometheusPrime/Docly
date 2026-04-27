@@ -47,6 +47,21 @@ class MetadataUseCasesTest {
     }
 
     @Test
+    fun validateMetadataRejectsYearBeyondNextYearAllowance() {
+        val metadata = DocumentMetadata(
+            grade = "Grade 10",
+            subject = "Mathematics",
+            year = 2028,
+            paperType = "Past Paper"
+        )
+
+        val result = ValidateMetadataUseCase(fixedTimeProvider)(metadata)
+
+        assertFalse(result.isValid)
+        assertEquals(listOf("Year must be between 1980 and 2027."), result.errors)
+    }
+
+    @Test
     fun generateDocumentNameNormalizesUnsafeCharacters() {
         val metadata = DocumentMetadata(
             grade = "Grade 10",
@@ -59,5 +74,20 @@ class MetadataUseCasesTest {
         val fileName = GenerateDocumentNameUseCase()(metadata)
 
         assertEquals("grade_10_math_stats_2026_paper_1_a_b.pdf", fileName)
+    }
+
+    @Test
+    fun generateDocumentNameOmitsBlankOptionalPaperNumber() {
+        val metadata = DocumentMetadata(
+            grade = "Grade 10",
+            subject = "Mathematics",
+            year = 2026,
+            paperType = "Past Paper",
+            paperNumber = " "
+        )
+
+        val fileName = GenerateDocumentNameUseCase()(metadata)
+
+        assertEquals("grade_10_mathematics_2026_past_paper.pdf", fileName)
     }
 }

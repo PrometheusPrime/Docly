@@ -467,3 +467,67 @@ Validation:
 - `adb devices` reported one attached device: `1268015548000502`.
 - `./gradlew --no-daemon :app:connectedDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 2m 11s`; 44 tests passed on `TECNO KL5 - 14`.
 - An earlier full connected run hit a transient Hilt test-application process-state crash while entering non-Hilt Room tests; `RoomRepositoryTest` passed in isolation, then the full connected suite passed after force-stopping the app/test processes.
+
+## 2026-04-27 - Phase 20 Multi-Page Session Editor
+
+Scope:
+
+- Wired `EditorViewModel` with events and effects for add page, delete, rotate, move up/down, reload, and continue.
+- Updated the editor UI to show session actions, per-page move/rotate/delete controls, rotated thumbnails, pending-review blocking, and inline errors without hiding editable pages.
+- Changed `ScannerRoute` to carry an optional `sessionId` and initialized `ScannerViewModel` from `SavedStateHandle` so editor add-page navigation appends to the existing session.
+- Updated app navigation to collect editor effects and route add-page to scanner and continue to metadata.
+
+Implementation decisions:
+
+- Reorder uses move up/down controls; drag-and-drop remains out of scope for this phase.
+- The editor displays only accepted pages, but the ViewModel keeps the full ordered session internally so repository reorder calls include pending hidden pages.
+- Delete remains immediate. The editor reloads after delete attempts because the repository can remove the DB row even when asset cleanup returns a storage error.
+- Continue is blocked until at least one accepted page exists and all pending pages are reviewed.
+
+Tests:
+
+- Expanded `EditorViewModel` JVM coverage for accepted-page filtering, pending counts, full-session reorder IDs, visible boundary no-ops, rotate, delete reload after cleanup errors, and navigation effects.
+- Added Scanner ViewModel coverage for route-provided session IDs.
+- Added Editor Compose coverage for action rendering, enabled/disabled boundary states, pending-page blocking, and click dispatch.
+- Extended Room repository instrumentation coverage for invalid reorder ID lists.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL in 49m 59s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 14m 52s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL in 5m 6s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 16m 52s`.
+- `adb devices` reported no attached devices, so connected/manual device validation was not run in this session.
+- The shell `JAVA_HOME` initially pointed to missing `/usr/lib/jvm/java-25-openjdk`; validation was run with the installed `/usr/lib/jvm/java-26-openjdk`.
+
+## 2026-04-27 - Phase 21 Metadata Flow
+
+Scope:
+
+- Replaced the placeholder metadata route with a state/event-driven `MetadataScreen` backed by `MetadataViewModel`.
+- Added metadata loading, live safe filename preview, required-field validation, non-integer year validation, trimmed persistence, nullable optional fields, save error handling, and navigation-to-export effects after successful persistence.
+- Wired `AppNavHost` to collect metadata effects and show toast messages, keeping export navigation behind ViewModel validation and save success.
+- Added Material 3 form fields for grade, subject, year, paper type, paper number, source, and notes.
+- Kept tags, Room schema changes, domain API changes, and `READY_FOR_EXPORT` status updates out of Phase 21.
+
+Implementation decisions:
+
+- Filename previews are shown only once required text fields are present and the year can be parsed as an integer.
+- Validation errors remain inline on the metadata screen; repository save failures also emit a toast.
+- Grade, subject, and paper type remain free-form text fields.
+
+Tests:
+
+- Added `MetadataViewModelTest` coverage for existing metadata load, blank session IDs, live preview updates, required-field blocking, non-integer and out-of-range years, trimmed successful saves, nullable optional fields, navigation effects, and save failures.
+- Added metadata use-case coverage for future-year rejection and blank optional paper-number filename generation.
+- Added `MetadataScreenStateTest` coverage for field rendering and dispatch, filename previews, validation errors, continue dispatch, and loading/saving disabled states.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintFormat --console=plain` completed with `BUILD SUCCESSFUL in 2m 56s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 2m 3s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 10m 28s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 8m 11s`.
+- `adb devices` reported one attached device: `1268015548000502`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.metadata.MetadataScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 4m 13s`; 5 metadata connected tests passed on `TECNO KL5 - 14`.
+- Full `:app:connectedDebugAndroidTest` was attempted twice after the metadata test fix. One run stalled at 5/52 tests and a later bounded run stalled at 18/52 tests; both were stopped and the app/test processes were force-stopped. The targeted Phase 21 connected coverage passed, but the full connected suite was not recorded as passing in this session.

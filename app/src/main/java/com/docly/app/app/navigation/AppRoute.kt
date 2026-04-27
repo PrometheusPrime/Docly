@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 const val PLACEHOLDER_SESSION_ID = "placeholder-session"
 
 @Serializable
-data object ScannerRoute
+data class ScannerRoute(val sessionId: String? = null)
 
 @Serializable
 data object LibraryRoute

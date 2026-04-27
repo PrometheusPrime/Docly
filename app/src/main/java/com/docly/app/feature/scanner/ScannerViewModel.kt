@@ -1,5 +1,6 @@
 package com.docly.app.feature.scanner
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docly.app.core.result.AppResult
@@ -19,10 +20,13 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class ScannerViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val capturePageUseCase: CapturePageUseCase,
     private val importDevicePhotosUseCase: ImportDevicePhotosUseCase
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(ScannerUiState())
+    private val _uiState = MutableStateFlow(
+        ScannerUiState(sessionId = savedStateHandle.get<String>(SESSION_ID_KEY))
+    )
     val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
 
     private val _uiEffect = MutableSharedFlow<ScannerUiEffect>()
@@ -185,4 +189,8 @@ class ScannerViewModel @Inject constructor(
     }
 
     private fun AppResult.Error.toCaptureUserMessage(): String = if (message.isNotBlank()) message else toUserMessage()
+
+    private companion object {
+        const val SESSION_ID_KEY = "sessionId"
+    }
 }

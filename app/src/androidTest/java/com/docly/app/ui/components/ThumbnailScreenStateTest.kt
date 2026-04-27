@@ -55,7 +55,7 @@ class ThumbnailScreenStateTest {
                         sessionId = "session-id",
                         pages = listOf(samplePage())
                     ),
-                    onEditMetadata = {},
+                    onEvent = {},
                     onNavigateBack = {}
                 )
             }
