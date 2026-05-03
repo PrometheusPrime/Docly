@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.docly.app.core.common.IdProvider
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
+import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PageReviewStatus
@@ -252,6 +253,27 @@ class ReviewViewModelTest {
     }
 
     @Test
+    fun lowStorageProcessingFailureShowsSpecificUserMessage() = runTest {
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(page = samplePage(corners = sampleCorners())),
+            fileRepository = FakeFileRepository(
+                storageResult = AppResult.Error(
+                    message = LOW_STORAGE_USER_MESSAGE,
+                    category = AppErrorCategory.STORAGE
+                )
+            )
+        )
+        val effect = async { viewModel.uiEffect.first() }
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnReprocessClicked)
+        advanceUntilIdle()
+
+        assertEquals(LOW_STORAGE_USER_MESSAGE, viewModel.uiState.value.errorMessage)
+        assertEquals(ReviewUiEffect.ShowToast(LOW_STORAGE_USER_MESSAGE), effect.await())
+    }
+
+    @Test
     fun toggleOriginalSwitchesPreviewState() = runTest {
         val viewModel = viewModel(
             scanRepository = FakeScanRepository(
@@ -492,7 +514,8 @@ class ReviewViewModelTest {
             AppResult.Success(outputPath)
     }
 
-    private class FakeFileRepository : FileRepository {
+    private class FakeFileRepository(private val storageResult: AppResult<Unit> = AppResult.Success(Unit)) :
+        FileRepository {
         override fun createSessionImagePath(sessionId: String, suffix: String): String = "/raw/$sessionId/$suffix.jpg"
 
         override fun createProcessedImagePath(sessionId: String, suffix: String): String =
@@ -502,7 +525,7 @@ class ReviewViewModelTest {
 
         override fun createPdfPath(fileName: String): String = "/pdf/$fileName"
 
-        override suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit> = AppResult.Success(Unit)
+        override suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit> = storageResult
 
         override suspend fun deleteFile(path: String): AppResult<Unit> = AppResult.Success(Unit)
 

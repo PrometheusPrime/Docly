@@ -4,6 +4,7 @@ import com.docly.app.core.dispatchers.DispatcherProvider
 import com.docly.app.core.file.AppFileDirectories
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
+import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
 import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScannedPage
@@ -51,7 +52,7 @@ class FileRepositoryImpl @Inject constructor(
             val usableBytes = appFileDirectories.pdfDirectory.usableSpace
             if (usableBytes < requiredBytes) {
                 throw RepositoryFailure(
-                    message = "Not enough app storage is available.",
+                    message = LOW_STORAGE_USER_MESSAGE,
                     category = AppErrorCategory.STORAGE
                 )
             }

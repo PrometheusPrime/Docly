@@ -10,6 +10,8 @@ enum class AppErrorCategory {
     UNKNOWN
 }
 
+const val LOW_STORAGE_USER_MESSAGE = "Not enough storage space to save this document."
+
 sealed class AppResult<out T> {
     data class Success<T>(val data: T) : AppResult<T>()
 
@@ -78,6 +80,11 @@ fun AppErrorCategory.defaultUserMessage(): String = when (this) {
 fun AppResult.Error.toUserMessage(): String = if (
     category == AppErrorCategory.VALIDATION &&
     message.isNotBlank()
+) {
+    message
+} else if (
+    category == AppErrorCategory.STORAGE &&
+    message == LOW_STORAGE_USER_MESSAGE
 ) {
     message
 } else {

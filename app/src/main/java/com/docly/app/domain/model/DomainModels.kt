@@ -10,6 +10,8 @@ data class ScanSession(
     val metadata: DocumentMetadata? = null
 )
 
+data class RecoverableScanSession(val session: ScanSession, val destination: ScanSessionRecoveryDestination)
+
 data class ScannedPage(
     val id: String,
     val sessionId: String,
@@ -73,6 +75,14 @@ enum class ScanSessionStatus {
     EXPORTED,
     ABANDONED
 }
+
+enum class ScanSessionRecoveryDestination {
+    REVIEW,
+    EDITOR,
+    EXPORT
+}
+
+data class OrphanCleanupResult(val deletedFileCount: Int)
 
 data class ProcessedPageResult(
     val processedImagePath: String,

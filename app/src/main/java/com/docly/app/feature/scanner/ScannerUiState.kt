@@ -3,6 +3,7 @@ package com.docly.app.feature.scanner
 import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.ScanMode
+import com.docly.app.domain.model.ScanSessionRecoveryDestination
 
 data class ScannerUiState(
     val cameraPermissionStatus: CameraPermissionStatus = CameraPermissionStatus.NotRequested,
@@ -16,8 +17,20 @@ data class ScannerUiState(
     val previewBoundary: PreviewDocumentBoundary? = null,
     val qualityHint: String? = null,
     val sessionId: String? = null,
+    val recoveryPrompt: ScannerRecoveryPrompt? = null,
+    val isCheckingRecovery: Boolean = false,
+    val isDiscardingRecovery: Boolean = false,
     val errorMessage: String? = null
 ) {
     val isCameraPermissionGranted: Boolean
         get() = cameraPermissionStatus == CameraPermissionStatus.Granted
+
+    val hasRecoveryPrompt: Boolean
+        get() = recoveryPrompt != null
 }
+
+data class ScannerRecoveryPrompt(
+    val sessionId: String,
+    val pageCount: Int,
+    val destination: ScanSessionRecoveryDestination
+)

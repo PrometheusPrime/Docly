@@ -592,3 +592,75 @@ Validation:
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 7m 46s`.
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 9m 34s`.
 - `adb devices` reported no attached devices, so targeted connected export/open/share tests and manual viewer/share-sheet validation were not run in this session.
+
+## 2026-04-29 - Phase 24 Local Library
+
+Scope:
+
+- Completed the local library as a searchable archive of exported `SavedDocument` records observed from Room.
+- Added `LibraryViewModel` state/effect handling for full-list observation, immediate search filtering, open/share effects, delete selection, delete confirmation, and delete success/error toasts.
+- Expanded `LibraryScreen` with a search field, empty-library versus no-results states, document thumbnail/title/metadata/page/date display, open/share/delete actions, and a delete confirmation dialog.
+- Wired library open/share effects through navigation using the existing `PdfIntentFactory`.
+
+Implementation decisions:
+
+- Phase 24 uses one search field instead of separate filter controls; matching covers title, grade, subject, year, paper type, and paper number.
+- Filtering stays in the ViewModel over the observed Room list, which is sufficient for MVP dataset sizes.
+- Delete requires confirmation and delegates to the existing repository path that removes the DB row and owned PDF/thumbnail files.
+- Delete failures keep the list visible and surface an inline error plus toast.
+
+Tests:
+
+- Added `LibraryViewModelTest` coverage for observed documents, search matching, empty search results, open/share effects, missing-document toasts, delete selection/dismissal, delete success, and delete failure.
+- Added `LibraryScreenStateTest` coverage for empty, populated, search, no-results, and delete-dialog states.
+- Updated existing thumbnail UI coverage for the new `LibraryScreen` event callback.
+
+Validation:
+
+- First targeted `LibraryViewModelTest` compile failed because the JUnit rule exposed a private nested type; the rule visibility was fixed.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --tests com.docly.app.feature.library.LibraryViewModelTest --console=plain` completed with `BUILD SUCCESSFUL in 5m 29s`.
+- First `:app:ktlintCheck` attempt failed on constructor formatting in `LibraryViewModelTest`; the formatting was fixed.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 1m 20s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 12s`.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 2m 16s`.
+- `adb devices` reported one attached device: `1268015548000502`.
+- Targeted connected library UI coverage first failed in offline mode because `com.android.tools.utp:android-test-plugin-host-additional-test-output:32.2.0` was not cached; rerunning without `--offline` fetched/used the dependency.
+- The first online targeted connected library UI run exposed a test-only issue from calling Compose `setContent` twice in one test; the test was split into two single-content tests.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.library.LibraryScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 2m 19s`; 5 library connected tests passed on `TECNO KL5 - 14`.
+
+## 2026-05-03 - Phase 25 Session Recovery and Crash-Safe Cleanup
+
+Scope:
+
+- Added recoverable-session lookup for the latest `IN_PROGRESS` session with at least one page, plus destination selection for review, editor, or export.
+- Added explicit session abandonment that marks the session `ABANDONED`, removes page rows, and then cleans page assets.
+- Added startup scanner recovery UI with Resume and Discard actions; capture, import, and scan-mode changes are blocked while the prompt is visible.
+- Added orphan-file cleanup for app-managed raw, processed, thumbnail, and PDF directories using Room references from scanned pages and saved documents.
+- Made missing page and saved-document delete requests idempotent.
+- Added a specific low-storage user message while keeping other storage failures mapped to the generic safe storage message.
+
+Implementation decisions:
+
+- Recovery is prompt-based on scanner entry and skipped when the scanner route already has an explicit session ID for adding pages.
+- Orphan cleanup runs from scanner `OnStart` and does not block recovery if cleanup itself fails.
+- Cleanup only deletes files inside the app-managed directories and preserves saved-document thumbnails as durable library references.
+- Discarding a recovered scan clears the prompt even if post-DB file cleanup reports a storage error, matching the existing DB-first cleanup pattern.
+
+Tests:
+
+- Added JVM coverage for scanner recovery prompt loading, resume destinations, discard, cleanup-failure tolerance, capture/import blocking, and low-storage capture/import messages.
+- Added JVM coverage for low-storage review processing and export messages.
+- Added connected Compose coverage for recovery prompt display, Resume/Discard events, and blocked capture/import controls.
+- Added Room-backed connected coverage for recoverable-session query, abandonment, idempotent missing deletes, and orphan cleanup preserving referenced files.
+- Added core result coverage for the low-storage user message passthrough.
+
+Validation:
+
+- Targeted unit pass: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --tests com.docly.app.core.AppResultTest --tests com.docly.app.feature.scanner.ScannerViewModelTest --tests com.docly.app.feature.review.ReviewViewModelTest --tests com.docly.app.feature.export.ExportViewModelTest --console=plain` completed with `BUILD SUCCESSFUL in 8m 6s`.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 50s`.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 4m 58s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 4m 51s`.
+- `adb devices` reported one attached device: `1268015548000502`.
+- A combined targeted connected run for `RoomRepositoryTest` and `ScannerScreenStateTest` first failed because the new cleanup test returned `Boolean`; after fixing the test signature, a second combined run stalled at 7/26 tests for several minutes and was stopped.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.scanner.ScannerScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 3s`; 10 scanner connected tests passed on `TECNO KL5 - 14`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.data.local.RoomRepositoryTest#scanRepositoryLoadsLatestRecoverableInProgressSessionWithPages,com.docly.app.data.local.RoomRepositoryTest#scanRepositoryAbandonsInProgressSessionAndDeletesPageRowsBeforeAssetCleanup,com.docly.app.data.local.RoomRepositoryTest#scanRepositoryDeletePageIsIdempotentWhenPageIsMissing,com.docly.app.data.local.RoomRepositoryTest#documentRepositoryDeleteDocumentIsIdempotentWhenDocumentIsMissing,com.docly.app.data.local.RoomRepositoryTest#cleanupRepositoryDeletesOnlyUnreferencedManagedFiles --console=plain` completed with `BUILD SUCCESSFUL in 2m 34s`; 5 Phase 25 Room connected tests passed on `TECNO KL5 - 14`.

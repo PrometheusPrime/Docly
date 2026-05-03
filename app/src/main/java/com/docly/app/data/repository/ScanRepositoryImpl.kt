@@ -62,6 +62,15 @@ class ScanRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getLatestRecoverableSession(): AppResult<ScanSession?> {
+        return repositoryResult(dispatcherProvider) {
+            val session = scanSessionDao.getLatestByStatusWithPages(ScanSessionStatus.IN_PROGRESS.name)
+                ?: return@repositoryResult null
+            val pages = scannedPageDao.getBySessionId(session.id).map { it.toDomain() }
+            session.toDomain(pages = pages)
+        }
+    }
+
     override suspend fun updateMetadata(sessionId: String, metadata: DocumentMetadata): AppResult<Unit> =
         repositoryResult(dispatcherProvider) {
             val session = scanSessionDao.requireSession(sessionId)
@@ -97,13 +106,14 @@ class ScanRepositoryImpl @Inject constructor(
 
     override suspend fun deletePage(pageId: String): AppResult<Unit> = repositoryResult(dispatcherProvider) {
         val deletedPage = database.withTransaction {
-            val page = scannedPageDao.getById(pageId)
-                ?: throw RepositoryFailure("Scanned page not found.", AppErrorCategory.VALIDATION)
+            val page = scannedPageDao.getById(pageId) ?: return@withTransaction null
             scannedPageDao.delete(page)
             touchSession(page.sessionId)
             page.toDomain()
         }
-        fileRepository.deletePageAssets(deletedPage).throwOnError()
+        if (deletedPage != null) {
+            fileRepository.deletePageAssets(deletedPage).throwOnError()
+        }
     }
 
     override suspend fun reorderPages(sessionId: String, orderedPageIds: List<String>): AppResult<Unit> =
@@ -139,6 +149,26 @@ class ScanRepositoryImpl @Inject constructor(
                 )
             )
         }
+
+    override suspend fun abandonSession(sessionId: String): AppResult<Unit> = repositoryResult(dispatcherProvider) {
+        val abandonedSession = database.withTransaction {
+            val session = scanSessionDao.getById(sessionId) ?: return@withTransaction null
+            if (session.status != ScanSessionStatus.IN_PROGRESS.name) return@withTransaction null
+
+            val pages = scannedPageDao.getBySessionId(sessionId)
+            scanSessionDao.update(
+                session.copy(
+                    updatedAt = timeProvider.now(),
+                    status = ScanSessionStatus.ABANDONED.name
+                )
+            )
+            scannedPageDao.deleteBySessionId(sessionId)
+            session.toDomain(pages = pages.map { page -> page.toDomain() })
+        }
+        if (abandonedSession != null) {
+            fileRepository.deleteSessionAssets(abandonedSession).throwOnError()
+        }
+    }
 
     private suspend fun touchSession(sessionId: String) {
         val session = scanSessionDao.requireSession(sessionId)

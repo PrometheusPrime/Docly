@@ -19,6 +19,20 @@ interface ScanSessionDao {
     @Query("SELECT * FROM scan_sessions WHERE status = :status ORDER BY updatedAt DESC LIMIT 1")
     suspend fun getLatestByStatus(status: String): ScanSessionEntity?
 
+    @Query(
+        """
+        SELECT * FROM scan_sessions
+        WHERE status = :status
+        AND EXISTS (
+            SELECT 1 FROM scanned_pages
+            WHERE scanned_pages.sessionId = scan_sessions.id
+        )
+        ORDER BY updatedAt DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getLatestByStatusWithPages(status: String): ScanSessionEntity?
+
     @Update
     suspend fun update(session: ScanSessionEntity)
 

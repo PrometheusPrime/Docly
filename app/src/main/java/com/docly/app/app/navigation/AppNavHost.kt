@@ -25,6 +25,7 @@ import com.docly.app.feature.export.ExportScreen
 import com.docly.app.feature.export.ExportUiEffect
 import com.docly.app.feature.export.ExportViewModel
 import com.docly.app.feature.library.LibraryScreen
+import com.docly.app.feature.library.LibraryUiEffect
 import com.docly.app.feature.library.LibraryViewModel
 import com.docly.app.feature.metadata.MetadataScreen
 import com.docly.app.feature.metadata.MetadataUiEffect
@@ -56,6 +57,14 @@ fun AppNavHost(
                     when (effect) {
                         is ScannerUiEffect.NavigateToReview -> {
                             navController.navigate(ReviewRoute(effect.sessionId))
+                        }
+
+                        is ScannerUiEffect.NavigateToEditor -> {
+                            navController.navigate(EditorRoute(effect.sessionId))
+                        }
+
+                        is ScannerUiEffect.NavigateToExport -> {
+                            navController.navigate(ExportRoute(effect.sessionId))
                         }
 
                         is ScannerUiEffect.ShowToast -> {
@@ -204,11 +213,39 @@ fun AppNavHost(
             )
         }
 
-        composable<LibraryRoute> {
-            val viewModel = hiltViewModel<LibraryViewModel>()
+        composable<LibraryRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<LibraryViewModel>(backStackEntry)
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is LibraryUiEffect.OpenPdf -> {
+                            context.startPdfIntent(
+                                intentResult = pdfIntentFactory.createOpenIntent(effect.pdfPath),
+                                noHandlerMessage = "No PDF viewer is available."
+                            )
+                        }
+
+                        is LibraryUiEffect.SharePdf -> {
+                            context.startPdfIntent(
+                                intentResult = pdfIntentFactory.createShareIntent(
+                                    pdfPath = effect.pdfPath,
+                                    title = effect.title
+                                ),
+                                noHandlerMessage = "No app is available to share this PDF."
+                            )
+                        }
+
+                        is LibraryUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
             LibraryScreen(
                 uiState = uiState,
+                onEvent = viewModel::onEvent,
                 onStartScanner = {
                     navController.navigate(ScannerRoute()) {
                         launchSingleTop = true

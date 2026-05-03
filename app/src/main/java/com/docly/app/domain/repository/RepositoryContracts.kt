@@ -3,6 +3,7 @@ package com.docly.app.domain.repository
 import com.docly.app.core.result.AppResult
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.ImportedRawImage
+import com.docly.app.domain.model.OrphanCleanupResult
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.ProcessedPageResult
 import com.docly.app.domain.model.SavedDocument
@@ -16,12 +17,15 @@ interface ScanRepository {
     suspend fun createSession(scanMode: ScanMode): AppResult<ScanSession>
     suspend fun getSession(sessionId: String): AppResult<ScanSession?>
     suspend fun getLatestInProgressSession(): AppResult<ScanSession?>
+    suspend fun getLatestRecoverableSession(): AppResult<ScanSession?> = getLatestInProgressSession()
     suspend fun updateMetadata(sessionId: String, metadata: DocumentMetadata): AppResult<Unit>
     suspend fun addPage(page: ScannedPage): AppResult<Unit>
     suspend fun updatePage(page: ScannedPage): AppResult<Unit>
     suspend fun deletePage(pageId: String): AppResult<Unit>
     suspend fun reorderPages(sessionId: String, orderedPageIds: List<String>): AppResult<Unit>
     suspend fun updateSessionStatus(sessionId: String, status: ScanSessionStatus): AppResult<Unit>
+    suspend fun abandonSession(sessionId: String): AppResult<Unit> =
+        updateSessionStatus(sessionId = sessionId, status = ScanSessionStatus.ABANDONED)
 }
 
 interface DocumentRepository {
@@ -67,6 +71,10 @@ interface FileRepository {
     suspend fun deletePageAssets(page: ScannedPage): AppResult<Unit>
     suspend fun deleteSessionAssets(session: ScanSession): AppResult<Unit>
     suspend fun deleteSavedDocumentAssets(document: SavedDocument): AppResult<Unit>
+}
+
+interface CleanupRepository {
+    suspend fun cleanOrphanedFiles(): AppResult<OrphanCleanupResult>
 }
 
 object StorageReserveBytes {

@@ -12,6 +12,7 @@ import com.docly.app.core.camera.PreviewDocumentBoundary
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.ScanMode
+import com.docly.app.domain.model.ScanSessionRecoveryDestination
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 import org.junit.Assert.assertEquals
@@ -171,12 +172,51 @@ class ScannerScreenStateTest {
         composeRule.onNodeWithTag(DoclyTestTags.SCAN_MODE_COLOR_OPTION).assertIsNotEnabled()
     }
 
-    private fun renderScannerContent(uiState: ScannerUiState, isCaptureAvailable: Boolean = false) {
+    @Test
+    fun recoveryPromptDispatchesResumeAndDiscardAndBlocksNewInput() {
+        val receivedEvents = mutableListOf<ScannerUiEvent>()
+
+        renderScannerContent(
+            uiState = ScannerUiState(
+                cameraPermissionStatus = CameraPermissionStatus.Granted,
+                isCameraReady = true,
+                recoveryPrompt = ScannerRecoveryPrompt(
+                    sessionId = "session-id",
+                    pageCount = 2,
+                    destination = ScanSessionRecoveryDestination.REVIEW
+                )
+            ),
+            isCaptureAvailable = true,
+            onEvent = { event -> receivedEvents += event }
+        )
+
+        composeRule.onNodeWithTag(DoclyTestTags.RECOVERY_PROMPT).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.CAMERA_CAPTURE_ACTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION).assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.RECOVERY_RESUME_ACTION).performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.RECOVERY_DISCARD_ACTION).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    ScannerUiEvent.OnResumeRecoveredSessionClicked,
+                    ScannerUiEvent.OnDiscardRecoveredSessionClicked
+                ),
+                receivedEvents
+            )
+        }
+    }
+
+    private fun renderScannerContent(
+        uiState: ScannerUiState,
+        isCaptureAvailable: Boolean = false,
+        onEvent: (ScannerUiEvent) -> Unit = {}
+    ) {
         composeRule.setContent {
             DoclyTheme {
                 ScannerScreenContent(
                     uiState = uiState,
-                    onEvent = {},
+                    onEvent = onEvent,
                     onOpenLibrary = {},
                     onRequestCameraPermission = {},
                     onOpenCameraSettings = {},

@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.docly.app.core.common.IdProvider
 import com.docly.app.core.dispatchers.DispatcherProvider
+import com.docly.app.core.file.AppFileDirectories
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
@@ -16,6 +17,7 @@ import com.docly.app.data.local.db.RoomMigrations
 import com.docly.app.data.local.entity.SavedDocumentEntity
 import com.docly.app.data.local.entity.ScanSessionEntity
 import com.docly.app.data.local.entity.ScannedPageEntity
+import com.docly.app.data.repository.CleanupRepositoryImpl
 import com.docly.app.data.repository.DocumentRepositoryImpl
 import com.docly.app.data.repository.ScanRepositoryImpl
 import com.docly.app.domain.model.DocumentMetadata
@@ -26,6 +28,7 @@ import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
 import com.docly.app.domain.repository.FileRepository
+import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -301,6 +304,55 @@ class RoomRepositoryTest {
     }
 
     @Test
+    fun scanRepositoryLoadsLatestRecoverableInProgressSessionWithPages() = runBlocking {
+        val repository = scanRepository()
+        val olderSession = scanSessionEntity(id = "older-session", updatedAt = 20L)
+        val newerEmptySession = scanSessionEntity(id = "newer-empty-session", updatedAt = 30L)
+        val abandonedSession = scanSessionEntity(
+            id = "abandoned-session",
+            updatedAt = 40L,
+            status = ScanSessionStatus.ABANDONED.name
+        )
+        database.scanSessionDao().insert(olderSession)
+        database.scanSessionDao().insert(newerEmptySession)
+        database.scanSessionDao().insert(abandonedSession)
+        database.scannedPageDao().insert(scannedPageEntity(id = "older-page", sessionId = olderSession.id))
+        database.scannedPageDao().insert(scannedPageEntity(id = "abandoned-page", sessionId = abandonedSession.id))
+
+        val recoverableSession = repository.getLatestRecoverableSession().successData()
+
+        assertEquals(olderSession.id, recoverableSession?.id)
+        assertEquals(listOf("older-page"), recoverableSession?.pages?.map { page -> page.id })
+    }
+
+    @Test
+    fun scanRepositoryAbandonsInProgressSessionAndDeletesPageRowsBeforeAssetCleanup() = runBlocking {
+        val fileRepository = FakeFileRepository()
+        val repository = scanRepository(fileRepository = fileRepository)
+        val session = repository.createSession(ScanMode.DOCUMENT).successData()
+        val page = page(
+            id = "page-id",
+            sessionId = session.id,
+            pageIndex = 0,
+            processedImagePath = "/processed/page-id.jpg",
+            thumbnailPath = "/thumbnails/page-id.jpg"
+        )
+        repository.addPage(page).assertSuccess()
+
+        repository.abandonSession(session.id).assertSuccess()
+
+        val loadedSession = repository.getSession(session.id).successData()
+        assertEquals(ScanSessionStatus.ABANDONED, loadedSession?.status)
+        assertTrue(loadedSession?.pages?.isEmpty() == true)
+        assertEquals(listOf(page), fileRepository.deletedSessionAssets.single().pages)
+    }
+
+    @Test
+    fun scanRepositoryDeletePageIsIdempotentWhenPageIsMissing() = runBlocking {
+        scanRepository().deletePage("missing-page").assertSuccess()
+    }
+
+    @Test
     fun documentRepositorySavesObservesReadsUpdatesAndDeletesDocuments() = runBlocking {
         val repository = DocumentRepositoryImpl(
             savedDocumentDao = database.savedDocumentDao(),
@@ -333,6 +385,77 @@ class RoomRepositoryTest {
 
         assertNull(repository.getDocument(document.id).successData())
         assertEquals(listOf(document), fileRepository.deletedDocumentAssets)
+    }
+
+    @Test
+    fun documentRepositoryDeleteDocumentIsIdempotentWhenDocumentIsMissing() = runBlocking {
+        documentRepository().deleteDocument("missing-document").assertSuccess()
+    }
+
+    @Test
+    fun cleanupRepositoryDeletesOnlyUnreferencedManagedFiles() {
+        runBlocking {
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            val root = File(context.cacheDir, "phase25-cleanup").apply {
+                deleteRecursively()
+                mkdirs()
+            }
+            val directories = TempAppFileDirectories(root)
+            directories.ensureDirectories()
+            val referencedRaw = directories.rawScanDirectory.writeFixture("referenced-raw.jpg")
+            val referencedProcessed = directories.processedScanDirectory.writeFixture("referenced-processed.jpg")
+            val referencedPageThumbnail = directories.thumbnailDirectory.writeFixture("referenced-page-thumb.jpg")
+            val referencedDocumentThumbnail = directories.thumbnailDirectory.writeFixture(
+                "referenced-document-thumb.jpg"
+            )
+            val referencedPdf = directories.pdfDirectory.writeFixture("referenced.pdf")
+            val orphanRaw = directories.rawScanDirectory.writeFixture("orphan-raw.jpg")
+            val orphanProcessed = directories.processedScanDirectory.writeFixture("orphan-processed.jpg")
+            val orphanThumbnail = directories.thumbnailDirectory.writeFixture("orphan-thumb.jpg")
+            val orphanPdf = directories.pdfDirectory.writeFixture("orphan.pdf")
+            val outsideFile = File(root.parentFile, "phase25-outside.txt").apply {
+                writeText("outside")
+            }
+            database.scanSessionDao().insert(scanSessionEntity())
+            database.scannedPageDao().insert(
+                scannedPageEntity().copy(
+                    originalImagePath = referencedRaw.absolutePath,
+                    processedImagePath = referencedProcessed.absolutePath,
+                    thumbnailPath = referencedPageThumbnail.absolutePath
+                )
+            )
+            database.savedDocumentDao().insert(
+                savedDocumentEntity().copy(
+                    pdfPath = referencedPdf.absolutePath,
+                    thumbnailPath = referencedDocumentThumbnail.absolutePath
+                )
+            )
+            val repository = CleanupRepositoryImpl(
+                scannedPageDao = database.scannedPageDao(),
+                savedDocumentDao = database.savedDocumentDao(),
+                appFileDirectories = directories,
+                dispatcherProvider = UnconfinedDispatcherProvider()
+            )
+
+            val result = repository.cleanOrphanedFiles().successData()
+
+            assertEquals(4, result.deletedFileCount)
+            listOf(
+                referencedRaw,
+                referencedProcessed,
+                referencedPageThumbnail,
+                referencedDocumentThumbnail,
+                referencedPdf,
+                outsideFile
+            ).forEach { file ->
+                assertTrue(file.exists())
+            }
+            listOf(orphanRaw, orphanProcessed, orphanThumbnail, orphanPdf).forEach { file ->
+                assertTrue(!file.exists())
+            }
+            root.deleteRecursively()
+            outsideFile.delete()
+        }
     }
 
     @Test
@@ -474,6 +597,13 @@ class RoomRepositoryTest {
         createdAt = 10L
     )
 
+    private fun File.writeFixture(fileName: String): File {
+        val file = File(this, fileName)
+        file.parentFile?.mkdirs()
+        file.writeText("fixture")
+        return file
+    }
+
     private fun AppResult<Unit>.assertSuccess() {
         assertTrue(this is AppResult.Success)
     }
@@ -507,11 +637,26 @@ class RoomRepositoryTest {
         override val default: CoroutineDispatcher = Dispatchers.Unconfined
     }
 
+    private class TempAppFileDirectories(root: File) : AppFileDirectories {
+        override val rawScanDirectory: File = File(root, "scans/raw")
+        override val processedScanDirectory: File = File(root, "scans/processed")
+        override val thumbnailDirectory: File = File(root, "scans/thumbnails")
+        override val pdfDirectory: File = File(root, "documents/pdf")
+
+        override fun ensureDirectories() {
+            rawScanDirectory.mkdirs()
+            processedScanDirectory.mkdirs()
+            thumbnailDirectory.mkdirs()
+            pdfDirectory.mkdirs()
+        }
+    }
+
     private class FakeFileRepository(
         private val pageDeleteResult: AppResult<Unit> = AppResult.Success(Unit),
         private val documentDeleteResult: AppResult<Unit> = AppResult.Success(Unit)
     ) : FileRepository {
         val deletedPageAssets = mutableListOf<ScannedPage>()
+        val deletedSessionAssets = mutableListOf<ScanSession>()
         val deletedDocumentAssets = mutableListOf<SavedDocument>()
 
         override fun createSessionImagePath(sessionId: String, suffix: String): String = "/raw/$sessionId/$suffix.jpg"
@@ -534,7 +679,10 @@ class RoomRepositoryTest {
             return pageDeleteResult
         }
 
-        override suspend fun deleteSessionAssets(session: ScanSession): AppResult<Unit> = AppResult.Success(Unit)
+        override suspend fun deleteSessionAssets(session: ScanSession): AppResult<Unit> {
+            deletedSessionAssets += session
+            return AppResult.Success(Unit)
+        }
 
         override suspend fun deleteSavedDocumentAssets(document: SavedDocument): AppResult<Unit> {
             deletedDocumentAssets += document

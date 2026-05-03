@@ -19,6 +19,9 @@ interface ScannedPageDao {
     @Query("SELECT * FROM scanned_pages WHERE sessionId = :sessionId ORDER BY pageIndex ASC")
     suspend fun getBySessionId(sessionId: String): List<ScannedPageEntity>
 
+    @Query("SELECT * FROM scanned_pages")
+    suspend fun getAll(): List<ScannedPageEntity>
+
     @Query("SELECT * FROM scanned_pages WHERE id = :pageId")
     suspend fun getById(pageId: String): ScannedPageEntity?
 

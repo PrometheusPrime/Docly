@@ -1,7 +1,6 @@
 package com.docly.app.data.repository
 
 import com.docly.app.core.dispatchers.DispatcherProvider
-import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.data.local.dao.SavedDocumentDao
 import com.docly.app.data.local.mapper.toDomain
@@ -32,8 +31,7 @@ class DocumentRepositoryImpl @Inject constructor(
         }
 
     override suspend fun deleteDocument(documentId: String): AppResult<Unit> = repositoryResult(dispatcherProvider) {
-        val document = savedDocumentDao.getById(documentId)
-            ?: throw RepositoryFailure("Saved document not found.", AppErrorCategory.VALIDATION)
+        val document = savedDocumentDao.getById(documentId) ?: return@repositoryResult
         savedDocumentDao.delete(document)
         fileRepository.deleteSavedDocumentAssets(document.toDomain()).throwOnError()
     }

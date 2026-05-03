@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -116,6 +117,7 @@ fun ScannerScreen(
     }
 
     LaunchedEffect(context) {
+        onEvent(ScannerUiEvent.OnStart)
         if (context.hasCameraPermission()) {
             onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
         }
@@ -252,10 +254,19 @@ fun ScannerScreenContent(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        RecoveryPrompt(
+            uiState = uiState,
+            onResume = {
+                onEvent(ScannerUiEvent.OnResumeRecoveredSessionClicked)
+            },
+            onDiscard = {
+                onEvent(ScannerUiEvent.OnDiscardRecoveredSessionClicked)
+            }
+        )
         ScanModeSelector(
             selectedScanMode = uiState.scanMode,
             onScanModeSelected = { scanMode -> onEvent(ScannerUiEvent.OnScanModeChanged(scanMode)) },
-            enabled = !uiState.isCapturing && !uiState.isImporting
+            enabled = !uiState.isCapturing && !uiState.isImporting && !uiState.hasRecoveryPrompt
         )
         CameraPermissionAndPreviewSection(
             uiState = uiState,
@@ -329,6 +340,52 @@ private fun CameraPermissionAndPreviewSection(
             actionTestTag = DoclyTestTags.CAMERA_SETTINGS_ACTION,
             onAction = onOpenCameraSettings
         )
+    }
+}
+
+@Composable
+private fun RecoveryPrompt(uiState: ScannerUiState, onResume: () -> Unit, onDiscard: () -> Unit) {
+    val prompt = uiState.recoveryPrompt ?: return
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(DoclyTestTags.RECOVERY_PROMPT),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Resume unfinished scan",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Recovered ${prompt.pageCount.pageCountText()} from your last scan.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onResume,
+                    enabled = !uiState.isDiscardingRecovery,
+                    modifier = Modifier.testTag(DoclyTestTags.RECOVERY_RESUME_ACTION)
+                ) {
+                    Text(text = "Resume")
+                }
+                OutlinedButton(
+                    onClick = onDiscard,
+                    enabled = !uiState.isDiscardingRecovery,
+                    modifier = Modifier.testTag(DoclyTestTags.RECOVERY_DISCARD_ACTION)
+                ) {
+                    Text(text = if (uiState.isDiscardingRecovery) "Discarding..." else "Discard")
+                }
+            }
+        }
     }
 }
 
@@ -444,7 +501,11 @@ private fun ScannerCaptureControls(
     ) {
         Button(
             onClick = onCapture,
-            enabled = uiState.isCameraReady && isCaptureAvailable && !uiState.isCapturing && !uiState.isImporting,
+            enabled = uiState.isCameraReady &&
+                isCaptureAvailable &&
+                !uiState.isCapturing &&
+                !uiState.isImporting &&
+                !uiState.hasRecoveryPrompt,
             modifier = Modifier.testTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
         ) {
             Text(text = if (uiState.isCapturing) "Capturing..." else "Capture")
@@ -478,7 +539,7 @@ private fun ImportActions(
 ) {
     Button(
         onClick = onImportSinglePhoto,
-        enabled = !uiState.isImporting && !uiState.isCapturing,
+        enabled = !uiState.isImporting && !uiState.isCapturing && !uiState.hasRecoveryPrompt,
         modifier = Modifier.testTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
     ) {
         Icon(imageVector = Icons.Filled.Add, contentDescription = null)
@@ -487,7 +548,7 @@ private fun ImportActions(
     }
     OutlinedButton(
         onClick = onImportMultiplePhotos,
-        enabled = !uiState.isImporting && !uiState.isCapturing,
+        enabled = !uiState.isImporting && !uiState.isCapturing && !uiState.hasRecoveryPrompt,
         modifier = Modifier.testTag(DoclyTestTags.IMPORT_MULTIPLE_PHOTOS_ACTION)
     ) {
         Icon(imageVector = Icons.Filled.Add, contentDescription = null)
@@ -495,6 +556,8 @@ private fun ImportActions(
         Text(text = "Import photos")
     }
 }
+
+private fun Int.pageCountText(): String = if (this == 1) "1 page" else "$this pages"
 
 private fun Context.hasCameraPermission(): Boolean = ContextCompat.checkSelfPermission(
     this,

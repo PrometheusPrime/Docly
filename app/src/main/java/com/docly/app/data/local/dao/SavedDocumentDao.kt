@@ -17,6 +17,9 @@ interface SavedDocumentDao {
     @Query("SELECT * FROM saved_documents ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<SavedDocumentEntity>>
 
+    @Query("SELECT * FROM saved_documents")
+    suspend fun getAll(): List<SavedDocumentEntity>
+
     @Query("SELECT * FROM saved_documents WHERE id = :documentId")
     suspend fun getById(documentId: String): SavedDocumentEntity?
 

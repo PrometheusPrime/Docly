@@ -71,6 +71,7 @@ class ThumbnailScreenStateTest {
             DoclyTheme {
                 LibraryScreen(
                     uiState = LibraryUiState(documents = listOf(sampleDocument())),
+                    onEvent = {},
                     onStartScanner = {}
                 )
             }

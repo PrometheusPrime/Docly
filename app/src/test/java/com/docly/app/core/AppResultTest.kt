@@ -2,6 +2,7 @@ package com.docly.app.core
 
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
+import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
 import com.docly.app.core.result.defaultUserMessage
 import com.docly.app.core.result.errorOrNull
 import com.docly.app.core.result.flatMap
@@ -143,5 +144,15 @@ class AppResultTest {
         )
 
         assertEquals(AppErrorCategory.STORAGE.defaultUserMessage(), error.toUserMessage())
+    }
+
+    @Test
+    fun lowStorageErrorUsesSpecificUserMessage() {
+        val error = AppResult.Error(
+            message = LOW_STORAGE_USER_MESSAGE,
+            category = AppErrorCategory.STORAGE
+        )
+
+        assertEquals(LOW_STORAGE_USER_MESSAGE, error.toUserMessage())
     }
 }

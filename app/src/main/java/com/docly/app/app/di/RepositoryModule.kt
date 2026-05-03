@@ -1,11 +1,13 @@
 package com.docly.app.app.di
 
+import com.docly.app.data.repository.CleanupRepositoryImpl
 import com.docly.app.data.repository.DevicePhotoRepositoryImpl
 import com.docly.app.data.repository.DocumentRepositoryImpl
 import com.docly.app.data.repository.FileRepositoryImpl
 import com.docly.app.data.repository.ImageProcessingRepositoryImpl
 import com.docly.app.data.repository.PdfRepositoryImpl
 import com.docly.app.data.repository.ScanRepositoryImpl
+import com.docly.app.domain.repository.CleanupRepository
 import com.docly.app.domain.repository.DevicePhotoRepository
 import com.docly.app.domain.repository.DocumentRepository
 import com.docly.app.domain.repository.FileRepository
@@ -24,6 +26,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindScanRepository(impl: ScanRepositoryImpl): ScanRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCleanupRepository(impl: CleanupRepositoryImpl): CleanupRepository
 
     @Binds
     @Singleton

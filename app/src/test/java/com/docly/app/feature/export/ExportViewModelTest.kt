@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.docly.app.core.common.IdProvider
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
+import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
 import com.docly.app.core.testing.FixedTimeProvider
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.SavedDocument
@@ -100,6 +101,28 @@ class ExportViewModelTest {
 
         assertEquals("We could not create the PDF. Please try again.", viewModel.uiState.value.errorMessage)
         assertEquals(ExportUiEffect.ShowToast("We could not create the PDF. Please try again."), effect.await())
+    }
+
+    @Test
+    fun lowStorageExportFailureShowsSpecificUserMessage() = runTest {
+        val viewModel = viewModel(
+            fileRepository = FakeFileRepository(
+                root = temporaryFolder.root,
+                storageResult = AppResult.Error(
+                    message = LOW_STORAGE_USER_MESSAGE,
+                    category = AppErrorCategory.STORAGE
+                )
+            )
+        )
+        advanceUntilIdle()
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(ExportUiEvent.OnExportClicked)
+        advanceUntilIdle()
+
+        assertEquals(LOW_STORAGE_USER_MESSAGE, viewModel.uiState.value.errorMessage)
+        assertEquals(ExportUiEffect.ShowToast(LOW_STORAGE_USER_MESSAGE), effect.await())
     }
 
     @Test
@@ -311,7 +334,10 @@ class ExportViewModelTest {
         }
     }
 
-    private class FakeFileRepository(private val root: File) : FileRepository {
+    private class FakeFileRepository(
+        private val root: File,
+        private val storageResult: AppResult<Unit> = AppResult.Success(Unit)
+    ) : FileRepository {
         override fun createSessionImagePath(sessionId: String, suffix: String): String = "/raw/$sessionId/$suffix.jpg"
 
         override fun createProcessedImagePath(sessionId: String, suffix: String): String =
@@ -321,7 +347,7 @@ class ExportViewModelTest {
 
         override fun createPdfPath(fileName: String): String = File(root, "pdf/$fileName").absolutePath
 
-        override suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit> = AppResult.Success(Unit)
+        override suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit> = storageResult
 
         override suspend fun deleteFile(path: String): AppResult<Unit> {
             File(path).delete()

@@ -13,6 +13,8 @@ sealed interface ScannerUiEvent {
     data object OnFlashToggleClicked : ScannerUiEvent
     data class OnCaptureClicked(val captureAction: ScannerCaptureAction) : ScannerUiEvent
     data class OnImportPhotosSelected(val sourceUris: List<String>) : ScannerUiEvent
+    data object OnResumeRecoveredSessionClicked : ScannerUiEvent
+    data object OnDiscardRecoveredSessionClicked : ScannerUiEvent
     data class OnScanModeChanged(val scanMode: ScanMode) : ScannerUiEvent
     data class OnCornersDetected(val corners: PageCorners?) : ScannerUiEvent
     data class OnPreviewDocumentBoundaryChanged(val boundary: PreviewDocumentBoundary?) : ScannerUiEvent

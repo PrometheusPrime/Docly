@@ -1,8 +1,8 @@
 [versions]
 # Build plugins
-agp = "9.1.1"
+agp = "9.2.0"
 kotlin = "2.2.10"
-ksp = "2.2.10-2.0.2"
+ksp = "2.3.2"
 hilt = "2.59.2"
 room = "2.8.4"
 ktlintGradle = "14.2.0"
