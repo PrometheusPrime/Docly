@@ -105,6 +105,8 @@ interface FileRepository {
     fun createProcessedImagePath(sessionId: String, suffix: String): String
     fun createThumbnailPath(sessionId: String, suffix: String): String
     fun createPdfPath(fileName: String): String
+    fun createImageDocumentPath(fileName: String): String = createPdfPath(fileName)
+    fun createTempImagePath(suffix: String): String = createProcessedImagePath(sessionId = "temp", suffix = suffix)
     suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit>
     suspend fun deleteFile(path: String): AppResult<Unit>
     suspend fun deleteFiles(paths: List<String>): AppResult<Unit>

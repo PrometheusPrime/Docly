@@ -32,6 +32,7 @@ import com.docly.app.domain.repository.ImageProcessingRepository
 import com.docly.app.domain.repository.ScanRepository
 import com.docly.app.domain.usecase.page.CapturePageUseCase
 import com.docly.app.domain.usecase.page.ImportDevicePhotosUseCase
+import com.docly.app.domain.usecase.scanner.ImportScannedPagesUseCase
 import com.docly.app.domain.usecase.session.AbandonScanSessionUseCase
 import com.docly.app.domain.usecase.session.CleanOrphanedFilesUseCase
 import com.docly.app.domain.usecase.session.GetRecoverableSessionUseCase
@@ -592,6 +593,7 @@ class ScannerViewModelTest {
         sessionId: String? = null,
         capturePageUseCase: CapturePageUseCase = captureUseCase(),
         importDevicePhotosUseCase: ImportDevicePhotosUseCase = importUseCase(),
+        importScannedPagesUseCase: ImportScannedPagesUseCase = importScannedUseCase(),
         getRecoverableSessionUseCase: GetRecoverableSessionUseCase = GetRecoverableSessionUseCase(
             FakeScanRepository()
         ),
@@ -605,6 +607,7 @@ class ScannerViewModelTest {
         },
         capturePageUseCase = capturePageUseCase,
         importDevicePhotosUseCase = importDevicePhotosUseCase,
+        importScannedPagesUseCase = importScannedPagesUseCase,
         getRecoverableSessionUseCase = getRecoverableSessionUseCase,
         abandonScanSessionUseCase = abandonScanSessionUseCase,
         cleanOrphanedFilesUseCase = cleanOrphanedFilesUseCase,
@@ -635,6 +638,22 @@ class ScannerViewModelTest {
         idProvider: IdProvider = SequenceIdProvider(listOf("page-1", "page-2")),
         timeProvider: TimeProvider = FixedTimeProvider(timestampMillis = 1L)
     ): ImportDevicePhotosUseCase = ImportDevicePhotosUseCase(
+        scanRepository = scanRepository,
+        devicePhotoRepository = devicePhotoRepository,
+        fileRepository = fileRepository,
+        imageProcessingRepository = imageProcessingRepository,
+        idProvider = idProvider,
+        timeProvider = timeProvider
+    )
+
+    private fun importScannedUseCase(
+        scanRepository: FakeScanRepository = FakeScanRepository(),
+        devicePhotoRepository: FakeDevicePhotoRepository = FakeDevicePhotoRepository(),
+        fileRepository: FakeFileRepository = FakeFileRepository(),
+        imageProcessingRepository: ImageProcessingRepository = FakeImageProcessingRepository(),
+        idProvider: IdProvider = SequenceIdProvider(listOf("page-1", "page-2")),
+        timeProvider: TimeProvider = FixedTimeProvider(timestampMillis = 1L)
+    ): ImportScannedPagesUseCase = ImportScannedPagesUseCase(
         scanRepository = scanRepository,
         devicePhotoRepository = devicePhotoRepository,
         fileRepository = fileRepository,

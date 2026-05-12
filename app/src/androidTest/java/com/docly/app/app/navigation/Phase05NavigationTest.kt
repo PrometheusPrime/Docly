@@ -50,10 +50,9 @@ class Phase05NavigationTest {
         composeRule.onNodeWithText("Scan")
             .performClick()
 
-        composeRule.onNodeWithTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
-            .assertExists()
+        composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag(DoclyTestTags.IMPORT_MULTIPLE_PHOTOS_ACTION)
+        composeRule.onNodeWithTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
             .assertExists()
     }
 

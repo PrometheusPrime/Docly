@@ -15,7 +15,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
 import com.docly.app.core.file.DocumentIntentFactory
 import com.docly.app.core.result.AppResult
 import com.docly.app.feature.editor.EditorScreen
@@ -32,12 +31,12 @@ import com.docly.app.feature.metadata.MetadataScreen
 import com.docly.app.feature.metadata.MetadataUiEffect
 import com.docly.app.feature.metadata.MetadataViewModel
 import com.docly.app.feature.placeholder.PlaceholderScreen
-import com.docly.app.feature.review.ReviewScreen
-import com.docly.app.feature.review.ReviewUiEffect
-import com.docly.app.feature.review.ReviewViewModel
 import com.docly.app.feature.scanner.ScannerScreen
 import com.docly.app.feature.scanner.ScannerUiEffect
 import com.docly.app.feature.scanner.ScannerViewModel
+import com.docly.app.feature.scanreview.ScanReviewScreen
+import com.docly.app.feature.scanreview.ScanReviewUiEffect
+import com.docly.app.feature.scanreview.ScanReviewViewModel
 
 @Composable
 fun AppNavHost(
@@ -108,35 +107,34 @@ fun AppNavHost(
         }
 
         composable<ReviewRoute> { backStackEntry ->
-            val viewModel = hiltViewModel<ReviewViewModel>(backStackEntry)
+            val viewModel = hiltViewModel<ScanReviewViewModel>(backStackEntry)
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val route = backStackEntry.toRoute<ReviewRoute>()
             val context = LocalContext.current
             LaunchedEffect(viewModel) {
                 viewModel.uiEffect.collect { effect ->
                     when (effect) {
-                        is ReviewUiEffect.NavigateBackToScanner -> {
+                        is ScanReviewUiEffect.NavigateToScanner -> {
                             navController.navigate(ScannerRoute(effect.sessionId)) {
                                 launchSingleTop = true
                             }
                         }
 
-                        is ReviewUiEffect.NavigateToEditor -> {
-                            navController.navigate(EditorRoute(effect.sessionId))
+                        ScanReviewUiEffect.NavigateToDocuments -> {
+                            navController.navigate(LibraryRoute) {
+                                launchSingleTop = true
+                                popUpTo(HomeRoute)
+                            }
                         }
 
-                        is ReviewUiEffect.ShowToast -> {
+                        is ScanReviewUiEffect.ShowToast -> {
                             Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
             }
-            ReviewScreen(
+            ScanReviewScreen(
                 uiState = uiState,
                 onEvent = viewModel::onEvent,
-                onEditPages = {
-                    navController.navigate(EditorRoute(route.sessionId))
-                },
                 onNavigateBack = navController::popBackStack
             )
         }

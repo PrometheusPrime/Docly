@@ -17,6 +17,7 @@ navigation = "2.9.7"
 # Camera, media, and image processing
 cameraX = "1.6.0"
 coil = "3.4.0"
+mlkitDocumentScanner = "16.0.0"
 opencv = "4.13.0"
 
 # KotlinX
@@ -79,6 +80,7 @@ androidx-camera-view = { group = "androidx.camera", name = "camera-view", versio
 
 # Image loading and image processing
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+mlkit-document-scanner = { group = "com.google.android.gms", name = "play-services-mlkit-document-scanner", version.ref = "mlkitDocumentScanner" }
 opencv = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
 
 # Networking and background work

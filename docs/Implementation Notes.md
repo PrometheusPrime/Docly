@@ -900,3 +900,30 @@ Validation:
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL in 8m 42s`.
 - Requested local gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 41s`.
 - The regenerated debug merged, packaged, and androidTest packaged manifests do not contain `INTERNET` or `ACCESS_NETWORK_STATE`.
+
+## 2026-05-12 - Phase 3 Document Scanner
+
+Scope:
+
+- Added ML Kit Document Scanner as the primary scanner entry through a replaceable `DocumentScannerService`.
+- Replaced the visible Scan screen with an ML Kit launch flow while keeping the existing CameraX/OpenCV scanner code compiling as hidden fallback infrastructure.
+- Added scanned-page import from ML Kit JPEG result URIs into app-managed scan storage with `ScanSession` and `ScanPage` records.
+- Added a Scan Review flow with title entry, PDF/images output selection, page reorder, rotate, delete, add page, and save actions.
+- Added scanned PDF and scanned image document registration in the unified Documents library.
+- Added scan page rendering so saved PDF/image outputs respect review-time rotation.
+
+Implementation decisions:
+
+- The primary save flow asks only for a simple document title and output format; the older exam metadata/export screens remain available only through legacy fallback routes.
+- ML Kit scanner unavailability and canceled/empty scan results surface as clear UI errors instead of silently falling back.
+- No Room schema change was required because Phase 2 already introduced `documents`, `scan_sessions`, and `scan_pages`.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:compileDebugUnitTestKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 28m 46s`.
+- `adb shell am instrument -w -r com.docly.app.test/com.docly.app.HiltTestRunner` completed on `TECNO KL5 - 14` with `OK (61 tests)`.
+- Physical-device scanner smoke tests were not run in this environment.

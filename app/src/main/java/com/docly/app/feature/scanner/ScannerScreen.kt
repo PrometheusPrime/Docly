@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -46,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -66,9 +68,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.docly.app.app.di.CameraPreviewBinderEntryPoint
+import com.docly.app.app.di.DocumentScannerServiceEntryPoint
 import com.docly.app.core.camera.CameraPreviewBinder
 import com.docly.app.core.camera.CameraPreviewSession
 import com.docly.app.core.camera.PreviewDocumentBoundary
+import com.docly.app.core.result.AppResult
+import com.docly.app.core.scanner.DocumentScannerService
+import com.docly.app.core.scanner.ScanOptions
+import com.docly.app.core.scanner.ScanResultFormat
 import com.docly.app.ui.components.DoclyAdaptiveTwoActionRow
 import com.docly.app.ui.components.DoclyEmptyContent
 import com.docly.app.ui.components.DoclyLoadingContent
@@ -78,9 +85,184 @@ import com.docly.app.ui.components.doclyMinimumTouchTarget
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.launch
 
 @Composable
 fun ScannerScreen(
+    uiState: ScannerUiState,
+    onEvent: (ScannerUiEvent) -> Unit,
+    onOpenLibrary: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val currentActivity by rememberUpdatedState(context.findActivity())
+    val coroutineScope = rememberCoroutineScope()
+    val documentScannerService: DocumentScannerService = remember(context.applicationContext) {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            DocumentScannerServiceEntryPoint::class.java
+        ).documentScannerService()
+    }
+    val scannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        handleScannerActivityResult(
+            activityResult = activityResult,
+            documentScannerService = documentScannerService,
+            onEvent = onEvent
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        onEvent(ScannerUiEvent.OnStart)
+    }
+
+    MlKitScannerScreenContent(
+        uiState = uiState,
+        onOpenLibrary = onOpenLibrary,
+        onStartScan = {
+            val activity = currentActivity
+            if (activity == null) {
+                onEvent(ScannerUiEvent.OnScannerLaunchFailed("Scanner could not start from this screen."))
+                return@MlKitScannerScreenContent
+            }
+
+            onEvent(ScannerUiEvent.OnScannerLaunchStarted)
+            coroutineScope.launch {
+                when (
+                    val requestResult = documentScannerService.createScanRequest(
+                        activity = activity,
+                        options = ScanOptions(
+                            allowGalleryImport = true,
+                            resultFormats = setOf(ScanResultFormat.JPEG)
+                        )
+                    )
+                ) {
+                    is AppResult.Error -> onEvent(ScannerUiEvent.OnScannerLaunchFailed(requestResult.message))
+
+                    is AppResult.Success -> {
+                        runCatching {
+                            scannerLauncher.launch(requestResult.data)
+                        }.onFailure {
+                            onEvent(ScannerUiEvent.OnScannerLaunchFailed("Document scanner could not be opened."))
+                        }
+                    }
+                }
+            }
+        },
+        onResumeRecoveredSession = { onEvent(ScannerUiEvent.OnResumeRecoveredSessionClicked) },
+        onDiscardRecoveredSession = { onEvent(ScannerUiEvent.OnDiscardRecoveredSessionClicked) },
+        modifier = modifier
+    )
+}
+
+private fun handleScannerActivityResult(
+    activityResult: ActivityResult,
+    documentScannerService: DocumentScannerService,
+    onEvent: (ScannerUiEvent) -> Unit
+) {
+    if (activityResult.resultCode != Activity.RESULT_OK) {
+        onEvent(ScannerUiEvent.OnScanCanceled)
+        return
+    }
+
+    when (val scanResult = documentScannerService.parseScanResult(activityResult.data)) {
+        is AppResult.Error -> onEvent(ScannerUiEvent.OnScannerLaunchFailed(scanResult.message))
+        is AppResult.Success -> onEvent(ScannerUiEvent.OnScanResult(scanResult.data.pageImageUris))
+    }
+}
+
+@Composable
+private fun MlKitScannerScreenContent(
+    uiState: ScannerUiState,
+    onOpenLibrary: () -> Unit,
+    onStartScan: () -> Unit,
+    onResumeRecoveredSession: () -> Unit,
+    onDiscardRecoveredSession: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDiscardRecoveryConfirmation by rememberSaveable { mutableStateOf(false) }
+
+    DoclyScreenScaffold(
+        title = "Scan",
+        screenTestTag = DoclyTestTags.SCANNER_SCREEN,
+        modifier = modifier,
+        actions = {
+            IconButton(
+                onClick = onOpenLibrary,
+                modifier = Modifier.testTag(DoclyTestTags.OPEN_LIBRARY_ACTION)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Home,
+                    contentDescription = "Open library"
+                )
+            }
+        }
+    ) {
+        Text(
+            text = "Scan documents",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        RecoveryPrompt(
+            uiState = uiState,
+            onResume = onResumeRecoveredSession,
+            onDiscard = {
+                showDiscardRecoveryConfirmation = true
+            }
+        )
+        ScannerProgressMessage(uiState = uiState)
+        Button(
+            onClick = onStartScan,
+            enabled = !uiState.isLaunchingScanner &&
+                !uiState.isImporting &&
+                !uiState.isCapturing &&
+                !uiState.hasRecoveryPrompt,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
+                .doclyMinimumTouchTarget()
+        ) {
+            Text(text = if (uiState.isLaunchingScanner) "Opening scanner..." else "Start scan")
+        }
+        OutlinedButton(
+            onClick = onOpenLibrary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .doclyMinimumTouchTarget()
+        ) {
+            Text(text = "Documents")
+        }
+        if (uiState.errorMessage != null) {
+            Text(
+                text = uiState.errorMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        DoclyEmptyContent(
+            title = "No active scan",
+            message = "Scanned pages will open for review after capture.",
+            actionLabel = "Start scan",
+            onAction = onStartScan
+        )
+    }
+
+    RecoveryDiscardConfirmationDialog(
+        showDialog = showDiscardRecoveryConfirmation && uiState.recoveryPrompt != null,
+        isDiscarding = uiState.isDiscardingRecovery,
+        onConfirm = {
+            showDiscardRecoveryConfirmation = false
+            onDiscardRecoveredSession()
+        },
+        onDismiss = {
+            showDiscardRecoveryConfirmation = false
+        }
+    )
+}
+
+@Composable
+private fun LegacyCameraScannerScreen(
     uiState: ScannerUiState,
     onEvent: (ScannerUiEvent) -> Unit,
     onOpenLibrary: () -> Unit,
@@ -343,8 +525,9 @@ private fun ScannerProgressMessage(uiState: ScannerUiState) {
     val message = when {
         uiState.isCheckingRecovery -> "Checking for unfinished scans..."
         uiState.isDiscardingRecovery -> "Discarding unfinished scan..."
+        uiState.isLaunchingScanner -> "Opening scanner..."
         uiState.isCapturing -> "Capturing page..."
-        uiState.isImporting -> "Importing selected photos..."
+        uiState.isImporting -> "Importing scanned pages..."
         else -> return
     }
     DoclyLoadingContent(message = message)

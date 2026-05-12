@@ -19,6 +19,7 @@ import com.docly.app.domain.model.ScanSessionRecoveryDestination
 import com.docly.app.domain.repository.DiagnosticsRepository
 import com.docly.app.domain.usecase.page.CapturePageUseCase
 import com.docly.app.domain.usecase.page.ImportDevicePhotosUseCase
+import com.docly.app.domain.usecase.scanner.ImportScannedPagesUseCase
 import com.docly.app.domain.usecase.session.AbandonScanSessionUseCase
 import com.docly.app.domain.usecase.session.CleanOrphanedFilesUseCase
 import com.docly.app.domain.usecase.session.GetRecoverableSessionUseCase
@@ -38,6 +39,7 @@ class ScannerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val capturePageUseCase: CapturePageUseCase,
     private val importDevicePhotosUseCase: ImportDevicePhotosUseCase,
+    private val importScannedPagesUseCase: ImportScannedPagesUseCase,
     private val getRecoverableSessionUseCase: GetRecoverableSessionUseCase,
     private val abandonScanSessionUseCase: AbandonScanSessionUseCase,
     private val cleanOrphanedFilesUseCase: CleanOrphanedFilesUseCase,
@@ -60,6 +62,14 @@ class ScannerViewModel @Inject constructor(
     fun onEvent(event: ScannerUiEvent) {
         when (event) {
             ScannerUiEvent.OnStart -> start()
+
+            ScannerUiEvent.OnScannerLaunchStarted -> onScannerLaunchStarted()
+
+            is ScannerUiEvent.OnScannerLaunchFailed -> onScannerLaunchFailed(event.message)
+
+            is ScannerUiEvent.OnScanResult -> importScannedPages(event.pageImageUris)
+
+            ScannerUiEvent.OnScanCanceled -> onScanCanceled()
 
             is ScannerUiEvent.OnPermissionResult -> onPermissionResult(event.status)
 
@@ -240,6 +250,72 @@ class ScannerViewModel @Inject constructor(
                     _uiEffect.emit(ScannerUiEffect.NavigateToReview(result.data.sessionId))
                 }
             }
+        }
+    }
+
+    private fun importScannedPages(pageImageUris: List<String>) {
+        if (
+            pageImageUris.isEmpty() ||
+            _uiState.value.isImporting ||
+            _uiState.value.isCapturing ||
+            _uiState.value.hasRecoveryPrompt
+        ) {
+            return
+        }
+
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            _uiState.update { state ->
+                state.copy(isImporting = true, isLaunchingScanner = false, errorMessage = null)
+            }
+
+            when (
+                val result = importScannedPagesUseCase(
+                    sessionId = currentState.sessionId,
+                    pageImageUris = pageImageUris,
+                    scanMode = currentState.scanMode
+                )
+            ) {
+                is AppResult.Error -> {
+                    val message = result.toUserMessage()
+                    _uiState.update { state ->
+                        state.copy(isImporting = false, errorMessage = message)
+                    }
+                    _uiEffect.emit(ScannerUiEffect.ShowToast(message))
+                }
+
+                is AppResult.Success -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            isImporting = false,
+                            sessionId = result.data.sessionId,
+                            errorMessage = null
+                        )
+                    }
+                    _uiEffect.emit(ScannerUiEffect.NavigateToReview(result.data.sessionId))
+                }
+            }
+        }
+    }
+
+    private fun onScannerLaunchStarted() {
+        _uiState.update { state ->
+            state.copy(isLaunchingScanner = true, errorMessage = null)
+        }
+    }
+
+    private fun onScannerLaunchFailed(message: String) {
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(isLaunchingScanner = false, errorMessage = message)
+            }
+            _uiEffect.emit(ScannerUiEffect.ShowToast(message))
+        }
+    }
+
+    private fun onScanCanceled() {
+        _uiState.update { state ->
+            state.copy(isLaunchingScanner = false, errorMessage = null)
         }
     }
 

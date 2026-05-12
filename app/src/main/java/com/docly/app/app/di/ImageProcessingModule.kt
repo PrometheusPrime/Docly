@@ -1,6 +1,7 @@
 package com.docly.app.app.di
 
 import com.docly.app.core.image.AndroidBitmapLoader
+import com.docly.app.core.image.AndroidScanPageRenderer
 import com.docly.app.core.image.AndroidScanQualityEvaluator
 import com.docly.app.core.image.AndroidThumbnailGenerator
 import com.docly.app.core.image.BitmapLoader
@@ -13,6 +14,7 @@ import com.docly.app.core.image.OpenCvImageEnhancer
 import com.docly.app.core.image.OpenCvInitializer
 import com.docly.app.core.image.OpenCvPerspectiveTransformer
 import com.docly.app.core.image.PerspectiveTransformer
+import com.docly.app.core.image.ScanPageRenderer
 import com.docly.app.core.image.ScanQualityEvaluator
 import com.docly.app.core.image.ScanQualityScorer
 import com.docly.app.core.image.ThumbnailGenerator
@@ -52,6 +54,10 @@ abstract class ImageProcessingModule {
     @Binds
     @Singleton
     abstract fun bindScanQualityEvaluator(impl: AndroidScanQualityEvaluator): ScanQualityEvaluator
+
+    @Binds
+    @Singleton
+    abstract fun bindScanPageRenderer(impl: AndroidScanPageRenderer): ScanPageRenderer
 
     @Binds
     @Singleton

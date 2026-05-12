@@ -45,6 +45,18 @@ class FileRepositoryImpl @Inject constructor(
         return pathIn(directory = appFileDirectories.pdfDirectory, fileName = safeFileName)
     }
 
+    override fun createImageDocumentPath(fileName: String): String {
+        val safeFileName = fileName.toSafeName().let { safeName ->
+            if (safeName.hasImageExtension()) safeName else "$safeName.$JPG_EXTENSION"
+        }
+        return pathIn(directory = appFileDirectories.imageDirectory, fileName = safeFileName)
+    }
+
+    override fun createTempImagePath(suffix: String): String = pathIn(
+        directory = appFileDirectories.tempDirectory,
+        fileName = "scan_${suffix.toSafeName()}.$JPG_EXTENSION"
+    )
+
     override suspend fun ensureStorageAvailable(requiredBytes: Long): AppResult<Unit> =
         repositoryResult(dispatcherProvider) {
             appFileDirectories.ensureDirectories()
@@ -134,6 +146,11 @@ class FileRepositoryImpl @Inject constructor(
             "" -> JPG_EXTENSION
             else -> safeExtension
         }
+    }
+
+    private fun String.hasImageExtension(): Boolean {
+        val extension = substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.US)
+        return extension in setOf(JPG_EXTENSION, "png", "webp", "heic", "heif")
     }
 
     private companion object {

@@ -167,7 +167,9 @@ class ScannerScreenStateTest {
                 autoCaptureHint = "Auto capture on"
             ),
             isCaptureAvailable = true,
-            onEvent = { event -> receivedEvents += event }
+            onAutoCaptureToggle = { enabled ->
+                receivedEvents += ScannerUiEvent.OnAutoCaptureEnabledChanged(enabled)
+            }
         )
 
         composeRule.onNodeWithTag(DoclyTestTags.SCANNER_AUTO_CAPTURE_TOGGLE)
@@ -312,7 +314,8 @@ class ScannerScreenStateTest {
     private fun renderScannerContent(
         uiState: ScannerUiState,
         isCaptureAvailable: Boolean = false,
-        onEvent: (ScannerUiEvent) -> Unit = {}
+        onEvent: (ScannerUiEvent) -> Unit = {},
+        onAutoCaptureToggle: (Boolean) -> Unit = {}
     ) {
         composeRule.setContent {
             DoclyTheme {
@@ -326,7 +329,8 @@ class ScannerScreenStateTest {
                     onImportMultiplePhotos = {},
                     isCaptureAvailable = isCaptureAvailable,
                     onCapture = {},
-                    cameraPreview = {}
+                    cameraPreview = {},
+                    onAutoCaptureToggle = onAutoCaptureToggle
                 )
             }
         }

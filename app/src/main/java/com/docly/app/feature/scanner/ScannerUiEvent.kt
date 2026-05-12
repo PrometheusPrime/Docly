@@ -7,6 +7,10 @@ import com.docly.app.domain.model.ScanMode
 
 sealed interface ScannerUiEvent {
     data object OnStart : ScannerUiEvent
+    data object OnScannerLaunchStarted : ScannerUiEvent
+    data class OnScannerLaunchFailed(val message: String) : ScannerUiEvent
+    data class OnScanResult(val pageImageUris: List<String>) : ScannerUiEvent
+    data object OnScanCanceled : ScannerUiEvent
     data class OnPermissionResult(val status: CameraPermissionStatus) : ScannerUiEvent
     data class OnCameraReadyChanged(val ready: Boolean) : ScannerUiEvent
     data class OnCameraPreviewError(val message: String) : ScannerUiEvent

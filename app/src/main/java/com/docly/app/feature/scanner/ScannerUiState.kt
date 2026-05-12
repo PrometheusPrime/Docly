@@ -8,6 +8,7 @@ import com.docly.app.domain.model.ScanSessionRecoveryDestination
 data class ScannerUiState(
     val cameraPermissionStatus: CameraPermissionStatus = CameraPermissionStatus.NotRequested,
     val isCameraReady: Boolean = false,
+    val isLaunchingScanner: Boolean = false,
     val isCapturing: Boolean = false,
     val isImporting: Boolean = false,
     val isFlashAvailable: Boolean = false,
