@@ -31,7 +31,9 @@ fun ScanModeSelector(
                 onClick = { onScanModeSelected(scanMode) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = ScanMode.entries.size),
                 enabled = enabled,
-                modifier = Modifier.testTag(scanMode.testTag)
+                modifier = Modifier
+                    .testTag(scanMode.testTag)
+                    .doclyMinimumTouchTarget()
             ) {
                 Text(text = scanMode.label)
             }

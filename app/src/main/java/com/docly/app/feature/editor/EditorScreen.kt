@@ -4,28 +4,41 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.docly.app.app.navigation.PLACEHOLDER_SESSION_ID
 import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScannedPage
+import com.docly.app.ui.components.DoclyAdaptiveLayout
+import com.docly.app.ui.components.DoclyAdaptiveTwoActionRow
 import com.docly.app.ui.components.DoclyEmptyContent
 import com.docly.app.ui.components.DoclyErrorContent
 import com.docly.app.ui.components.DoclyImageThumbnail
+import com.docly.app.ui.components.DoclyLazyScreenScaffold
 import com.docly.app.ui.components.DoclyLoadingContent
-import com.docly.app.ui.components.DoclyScreenScaffold
+import com.docly.app.ui.components.doclyMinimumTouchTarget
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 
@@ -36,102 +49,190 @@ fun EditorScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    DoclyScreenScaffold(
+    var pendingDeletePageId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    DoclyLazyScreenScaffold(
         title = "Editor",
         screenTestTag = DoclyTestTags.EDITOR_SCREEN,
         modifier = modifier,
-        onNavigateBack = onNavigateBack
+        onNavigateBack = onNavigateBack,
+        lazyListTestTag = DoclyTestTags.EDITOR_PAGE_LIST
     ) {
-        Text(
-            text = "Arrange pages",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = "Session ID: ${uiState.sessionId}",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (uiState.pendingPageCount > 0) {
+        item {
             Text(
-                text = "${uiState.pendingPageCount} pending page(s) still need review.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
+                text = "Arrange pages",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground
             )
+        }
+        item {
+            Text(
+                text = "Session ID: ${uiState.sessionId}",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (uiState.pendingPageCount > 0) {
+            item {
+                Text(
+                    text = "${uiState.pendingPageCount} pending page(s) still need review.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
         if (uiState.errorMessage != null && !uiState.isLoading && uiState.pages.isNotEmpty()) {
-            Text(
-                text = uiState.errorMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
+            item {
+                Text(
+                    text = uiState.errorMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
-        EditorSessionActions(uiState = uiState, onEvent = onEvent)
+        item {
+            EditorSessionActions(uiState = uiState, onEvent = onEvent)
+        }
         when {
-            uiState.isLoading -> DoclyLoadingContent(message = "Loading pages...")
+            uiState.isLoading -> item {
+                DoclyLoadingContent(message = "Loading pages...")
+            }
 
-            uiState.errorMessage != null && uiState.pages.isEmpty() -> DoclyErrorContent(
-                title = "Could not load pages",
-                message = uiState.errorMessage
-            )
+            uiState.errorMessage != null && uiState.pages.isEmpty() -> item {
+                DoclyErrorContent(
+                    title = "Could not load pages",
+                    message = uiState.errorMessage
+                )
+            }
 
-            uiState.pages.isEmpty() -> DoclyEmptyContent(
-                title = "No editable pages",
-                message = "Page ordering, rotation, and deletion controls will appear here."
-            )
+            uiState.pages.isEmpty() -> item {
+                DoclyEmptyContent(
+                    title = "No editable pages",
+                    message = "Page ordering, rotation, and deletion controls will appear here."
+                )
+            }
 
-            else -> EditorPageList(
+            else -> editorPageItems(
                 pages = uiState.pages,
                 canEditPages = uiState.canEditPages,
-                onEvent = onEvent
+                onEvent = onEvent,
+                onDeletePage = { pageId ->
+                    pendingDeletePageId = pageId
+                }
             )
         }
     }
+
+    val pendingDeletePageNumber = pendingDeletePageId?.let { pageId ->
+        uiState.pages.indexOfFirst { page -> page.id == pageId }.takeIf { index -> index >= 0 }?.plus(1)
+    }
+    DeletePageConfirmationDialog(
+        pageNumber = pendingDeletePageNumber,
+        isSaving = uiState.isSaving,
+        onConfirm = {
+            pendingDeletePageId?.let { pageId ->
+                pendingDeletePageId = null
+                onEvent(EditorUiEvent.OnDeletePageClicked(pageId))
+            }
+        },
+        onDismiss = {
+            pendingDeletePageId = null
+        }
+    )
 }
 
 @Composable
 private fun EditorSessionActions(uiState: EditorUiState, onEvent: (EditorUiEvent) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        OutlinedButton(
-            onClick = { onEvent(EditorUiEvent.OnAddPageClicked) },
-            enabled = uiState.canEditPages,
-            modifier = Modifier
-                .weight(1f)
-                .testTag(DoclyTestTags.EDITOR_ADD_PAGE_ACTION)
-        ) {
-            Text(text = "Add page")
+    DoclyAdaptiveTwoActionRow(
+        first = { actionModifier ->
+            OutlinedButton(
+                onClick = { onEvent(EditorUiEvent.OnAddPageClicked) },
+                enabled = uiState.canEditPages,
+                modifier = actionModifier.testTag(DoclyTestTags.EDITOR_ADD_PAGE_ACTION)
+            ) {
+                Text(text = "Add page")
+            }
+        },
+        second = { actionModifier ->
+            Button(
+                onClick = { onEvent(EditorUiEvent.OnContinueClicked) },
+                enabled = uiState.canContinue,
+                modifier = actionModifier.testTag(DoclyTestTags.EDITOR_CONTINUE_ACTION)
+            ) {
+                Text(text = if (uiState.isSaving) "Saving..." else "Continue")
+            }
         }
-        Button(
-            onClick = { onEvent(EditorUiEvent.OnContinueClicked) },
-            enabled = uiState.canContinue,
-            modifier = Modifier
-                .weight(1f)
-                .testTag(DoclyTestTags.EDITOR_CONTINUE_ACTION)
-        ) {
-            Text(text = if (uiState.isSaving) "Saving..." else "Continue")
-        }
-    }
+    )
 }
 
 @Composable
-private fun EditorPageList(pages: List<ScannedPage>, canEditPages: Boolean, onEvent: (EditorUiEvent) -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        pages.forEachIndexed { index, page ->
-            EditorPageRow(
-                page = page,
-                pageNumber = index + 1,
-                isFirstPage = index == 0,
-                isLastPage = index == pages.lastIndex,
-                canEditPages = canEditPages,
-                onEvent = onEvent
-            )
-        }
+private fun DeletePageConfirmationDialog(
+    pageNumber: Int?,
+    isSaving: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (pageNumber == null) return
+
+    AlertDialog(
+        onDismissRequest = {
+            if (!isSaving) {
+                onDismiss()
+            }
+        },
+        title = { Text(text = "Delete page?") },
+        text = {
+            Text(text = "Delete page $pageNumber from this scan?")
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = !isSaving,
+                modifier = Modifier
+                    .testTag(DoclyTestTags.EDITOR_DELETE_PAGE_CONFIRM_ACTION)
+                    .doclyMinimumTouchTarget()
+            ) {
+                Text(text = if (isSaving) "Deleting..." else "Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isSaving,
+                modifier = Modifier
+                    .testTag(DoclyTestTags.EDITOR_DELETE_PAGE_DISMISS_ACTION)
+                    .doclyMinimumTouchTarget()
+            ) {
+                Text(text = "Cancel")
+            }
+        },
+        modifier = Modifier
+            .testTag(DoclyTestTags.EDITOR_DELETE_PAGE_DIALOG)
+            .semantics {
+                contentDescription = "Delete page confirmation"
+            }
+    )
+}
+
+private fun LazyListScope.editorPageItems(
+    pages: List<ScannedPage>,
+    canEditPages: Boolean,
+    onEvent: (EditorUiEvent) -> Unit,
+    onDeletePage: (String) -> Unit
+) {
+    itemsIndexed(
+        items = pages,
+        key = { _, page -> page.id }
+    ) { index, page ->
+        EditorPageRow(
+            page = page,
+            pageNumber = index + 1,
+            isFirstPage = index == 0,
+            isLastPage = index == pages.lastIndex,
+            canEditPages = canEditPages,
+            onEvent = onEvent,
+            onDeletePage = onDeletePage
+        )
     }
 }
 
@@ -142,87 +243,133 @@ private fun EditorPageRow(
     isFirstPage: Boolean,
     isLastPage: Boolean,
     canEditPages: Boolean,
-    onEvent: (EditorUiEvent) -> Unit
+    onEvent: (EditorUiEvent) -> Unit,
+    onDeletePage: (String) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(152.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        DoclyImageThumbnail(
-            imagePath = page.thumbnailPath ?: page.processedImagePath ?: page.originalImagePath,
-            contentDescription = "Page $pageNumber thumbnail",
-            modifier = Modifier
-                .size(width = 84.dp, height = 112.dp)
-                .graphicsLayer {
-                    rotationZ = page.rotationDegrees.toFloat()
-                },
-            testTag = DoclyTestTags.EDITOR_PAGE_THUMBNAIL,
-            contentScale = ContentScale.Fit
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Page $pageNumber",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                text = "${page.width} x ${page.height}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+    DoclyAdaptiveLayout {
+        if (it) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 152.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                EditorPageThumbnail(page = page, pageNumber = pageNumber)
+                EditorPageDetails(
+                    page = page,
+                    pageNumber = pageNumber,
+                    isFirstPage = isFirstPage,
+                    isLastPage = isLastPage,
+                    canEditPages = canEditPages,
+                    onEvent = onEvent,
+                    onDeletePage = onDeletePage,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 152.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                EditorPageThumbnail(page = page, pageNumber = pageNumber)
+                EditorPageDetails(
+                    page = page,
+                    pageNumber = pageNumber,
+                    isFirstPage = isFirstPage,
+                    isLastPage = isLastPage,
+                    canEditPages = canEditPages,
+                    onEvent = onEvent,
+                    onDeletePage = onDeletePage,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorPageThumbnail(page: ScannedPage, pageNumber: Int) {
+    DoclyImageThumbnail(
+        imagePath = page.thumbnailPath,
+        contentDescription = "Page $pageNumber thumbnail",
+        modifier = Modifier
+            .size(width = 84.dp, height = 112.dp)
+            .graphicsLayer {
+                rotationZ = page.rotationDegrees.toFloat()
+            },
+        testTag = DoclyTestTags.EDITOR_PAGE_THUMBNAIL,
+        contentScale = ContentScale.Fit
+    )
+}
+
+@Composable
+private fun EditorPageDetails(
+    page: ScannedPage,
+    pageNumber: Int,
+    isFirstPage: Boolean,
+    isLastPage: Boolean,
+    canEditPages: Boolean,
+    onEvent: (EditorUiEvent) -> Unit,
+    onDeletePage: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Page $pageNumber",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = "${page.width} x ${page.height}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        DoclyAdaptiveTwoActionRow(
+            first = { actionModifier ->
                 OutlinedButton(
                     onClick = { onEvent(EditorUiEvent.OnMovePageUp(page.id)) },
                     enabled = canEditPages && !isFirstPage,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(DoclyTestTags.EDITOR_MOVE_PAGE_UP_ACTION)
+                    modifier = actionModifier.testTag(DoclyTestTags.EDITOR_MOVE_PAGE_UP_ACTION)
                 ) {
                     Text(text = "Up")
                 }
+            },
+            second = { actionModifier ->
                 OutlinedButton(
                     onClick = { onEvent(EditorUiEvent.OnMovePageDown(page.id)) },
                     enabled = canEditPages && !isLastPage,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(DoclyTestTags.EDITOR_MOVE_PAGE_DOWN_ACTION)
+                    modifier = actionModifier.testTag(DoclyTestTags.EDITOR_MOVE_PAGE_DOWN_ACTION)
                 ) {
                     Text(text = "Down")
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        )
+        DoclyAdaptiveTwoActionRow(
+            first = { actionModifier ->
                 OutlinedButton(
                     onClick = { onEvent(EditorUiEvent.OnRotatePageClicked(page.id)) },
                     enabled = canEditPages,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(DoclyTestTags.EDITOR_ROTATE_PAGE_ACTION)
+                    modifier = actionModifier.testTag(DoclyTestTags.EDITOR_ROTATE_PAGE_ACTION)
                 ) {
                     Text(text = "Rotate")
                 }
+            },
+            second = { actionModifier ->
                 OutlinedButton(
-                    onClick = { onEvent(EditorUiEvent.OnDeletePageClicked(page.id)) },
+                    onClick = { onDeletePage(page.id) },
                     enabled = canEditPages,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(DoclyTestTags.EDITOR_DELETE_PAGE_ACTION)
+                    modifier = actionModifier.testTag(DoclyTestTags.EDITOR_DELETE_PAGE_ACTION)
                 ) {
                     Text(text = "Delete")
                 }
             }
-        }
+        )
     }
 }
 

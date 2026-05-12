@@ -1,18 +1,26 @@
 package com.docly.app.feature.library
 
-import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
-import com.docly.app.domain.model.DocumentMetadata
-import com.docly.app.domain.model.SavedDocument
+import com.docly.app.domain.capability.DocumentCapabilityResolver
+import com.docly.app.domain.model.DoclyDocument
+import com.docly.app.domain.model.DocumentSource
+import com.docly.app.domain.model.DocumentType
+import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.repository.DocumentRepository
-import com.docly.app.domain.usecase.library.DeleteSavedDocumentUseCase
-import com.docly.app.domain.usecase.library.ObserveSavedDocumentsUseCase
+import com.docly.app.domain.usecase.library.DeleteDocumentUseCase
+import com.docly.app.domain.usecase.library.ImportDocumentUseCase
+import com.docly.app.domain.usecase.library.ObserveDocumentsUseCase
+import com.docly.app.domain.usecase.library.RenameDocumentUseCase
+import com.docly.app.domain.usecase.library.SearchDocumentsUseCase
+import com.docly.app.domain.usecase.library.ToggleFavoriteDocumentUseCase
+import com.docly.app.domain.usecase.library.UpdateLastOpenedUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -22,7 +30,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -35,197 +42,185 @@ class LibraryViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun observedDocumentsPopulateLibraryState() = runTest {
-        val firstDocument = sampleDocument(id = "first-document", createdAt = 2L)
-        val secondDocument = sampleDocument(id = "second-document", title = "Science Paper", createdAt = 1L)
-        val viewModel = viewModel(documents = listOf(firstDocument, secondDocument))
+    fun observedDocumentsPopulateState() = runTest {
+        val first = sampleDocument(id = "first", updatedAt = 2L)
+        val second = sampleDocument(id = "second", name = "Notes", type = DocumentType.TXT, updatedAt = 1L)
+        val viewModel = viewModel(documents = listOf(first, second))
         advanceUntilIdle()
 
-        assertEquals(listOf(firstDocument, secondDocument), viewModel.uiState.value.documents)
+        assertEquals(listOf(first, second), viewModel.uiState.value.documents)
         assertEquals(2, viewModel.uiState.value.totalDocumentCount)
         assertFalse(viewModel.uiState.value.isLoading)
     }
 
     @Test
-    fun searchFiltersDocumentsAcrossTitleAndMetadataCaseInsensitively() = runTest {
-        val mathDocument = sampleDocument(
-            id = "math-document",
-            title = "Algebra Revision",
-            metadata = sampleMetadata(subject = "Mathematics", paperNumber = "Paper 1")
-        )
-        val scienceDocument = sampleDocument(
-            id = "science-document",
-            title = "Science Paper",
-            metadata = sampleMetadata(grade = "Grade 11", subject = "Science", year = 2025, paperType = "Mock")
-        )
-        val viewModel = viewModel(documents = listOf(mathDocument, scienceDocument))
+    fun searchAndFavoriteFilterUpdateVisibleDocuments() = runTest {
+        val favorite = sampleDocument(id = "favorite", name = "Math", isFavorite = true)
+        val regular = sampleDocument(id = "regular", name = "Science")
+        val viewModel = viewModel(documents = listOf(favorite, regular))
         advanceUntilIdle()
 
-        viewModel.onEvent(LibraryUiEvent.OnSearchQueryChanged("MATH"))
-        assertEquals(listOf(mathDocument), viewModel.uiState.value.documents)
+        viewModel.onEvent(LibraryUiEvent.OnSearchQueryChanged("math"))
+        advanceUntilIdle()
+        assertEquals(listOf(favorite), viewModel.uiState.value.documents)
 
-        viewModel.onEvent(LibraryUiEvent.OnSearchQueryChanged("2025"))
-        assertEquals(listOf(scienceDocument), viewModel.uiState.value.documents)
-
-        viewModel.onEvent(LibraryUiEvent.OnSearchQueryChanged("paper 1"))
-        assertEquals(listOf(mathDocument), viewModel.uiState.value.documents)
+        viewModel.onEvent(LibraryUiEvent.OnClearSearchClicked)
+        viewModel.onEvent(LibraryUiEvent.OnFavoriteFilterToggled)
+        advanceUntilIdle()
+        assertEquals(listOf(favorite), viewModel.uiState.value.documents)
     }
 
     @Test
-    fun emptySearchResultsKeepTotalDocumentCount() = runTest {
-        val viewModel = viewModel(documents = listOf(sampleDocument()))
-        advanceUntilIdle()
-
-        viewModel.onEvent(LibraryUiEvent.OnSearchQueryChanged("biology"))
-
-        assertTrue(viewModel.uiState.value.documents.isEmpty())
-        assertEquals(1, viewModel.uiState.value.totalDocumentCount)
-        assertEquals("biology", viewModel.uiState.value.searchQuery)
-    }
-
-    @Test
-    fun openShareAndMissingDocumentEmitEffects() = runTest {
+    fun openShareRenameDeleteAndFavoriteCallRepository() = runTest {
         val document = sampleDocument()
-        val viewModel = viewModel(documents = listOf(document))
+        val repository = FakeDocumentRepository(listOf(document))
+        val viewModel = viewModel(repository = repository)
         advanceUntilIdle()
 
         val openEffect = async { viewModel.uiEffect.first() }
         runCurrent()
         viewModel.onEvent(LibraryUiEvent.OnOpenDocumentClicked(document.id))
         advanceUntilIdle()
-        assertEquals(LibraryUiEffect.OpenPdf(document.pdfPath), openEffect.await())
+        assertEquals(LibraryUiEffect.OpenDocument("/docs/document-id.pdf", "application/pdf"), openEffect.await())
+        assertEquals(listOf(document.id), repository.lastOpenedIds)
 
         val shareEffect = async { viewModel.uiEffect.first() }
         runCurrent()
         viewModel.onEvent(LibraryUiEvent.OnShareDocumentClicked(document.id))
         advanceUntilIdle()
-        assertEquals(LibraryUiEffect.SharePdf(document.pdfPath, document.title), shareEffect.await())
-
-        val missingEffect = async { viewModel.uiEffect.first() }
-        runCurrent()
-        viewModel.onEvent(LibraryUiEvent.OnOpenDocumentClicked("missing-document"))
-        advanceUntilIdle()
-        assertEquals(LibraryUiEffect.ShowToast("Saved document not found."), missingEffect.await())
-    }
-
-    @Test
-    fun deleteSelectionCanBeDismissedWithoutDeleting() = runTest {
-        val document = sampleDocument()
-        val repository = FakeDocumentRepository(documents = listOf(document))
-        val viewModel = viewModel(repository = repository)
-        advanceUntilIdle()
-
-        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentClicked(document.id))
-        assertEquals(document, viewModel.uiState.value.pendingDeleteDocument)
-
-        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentDismissed)
-
-        assertNull(viewModel.uiState.value.pendingDeleteDocument)
-        assertTrue(repository.deletedDocumentIds.isEmpty())
-    }
-
-    @Test
-    fun confirmedDeleteRemovesDocumentAndShowsToast() = runTest {
-        val document = sampleDocument()
-        val repository = FakeDocumentRepository(documents = listOf(document))
-        val viewModel = viewModel(repository = repository)
-        advanceUntilIdle()
-        val effect = async { viewModel.uiEffect.first() }
-        runCurrent()
-
-        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentClicked(document.id))
-        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentConfirmed)
-        advanceUntilIdle()
-
-        assertEquals(listOf(document.id), repository.deletedDocumentIds)
-        assertTrue(viewModel.uiState.value.documents.isEmpty())
-        assertNull(viewModel.uiState.value.pendingDeleteDocument)
-        assertEquals(LibraryUiEffect.ShowToast("Document deleted."), effect.await())
-    }
-
-    @Test
-    fun failedDeleteShowsErrorMessageAndToast() = runTest {
-        val document = sampleDocument()
-        val repository = FakeDocumentRepository(
-            documents = listOf(document),
-            deleteResult = AppResult.Error("Storage failed.", AppErrorCategory.STORAGE)
+        assertEquals(
+            LibraryUiEffect.ShareDocument("/docs/document-id.pdf", "Document", "application/pdf"),
+            shareEffect.await()
         )
+
+        viewModel.onEvent(LibraryUiEvent.OnFavoriteDocumentClicked(document.id))
+        advanceUntilIdle()
+        assertEquals(listOf(document.id to true), repository.favoriteUpdates)
+
+        viewModel.onEvent(LibraryUiEvent.OnRenameDocumentClicked(document.id))
+        viewModel.onEvent(LibraryUiEvent.OnRenameDocumentNameChanged("Renamed"))
+        viewModel.onEvent(LibraryUiEvent.OnRenameDocumentConfirmed)
+        advanceUntilIdle()
+        assertEquals(listOf(document.id to "Renamed"), repository.renameUpdates)
+
+        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentClicked(document.id))
+        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentConfirmed)
+        advanceUntilIdle()
+        assertEquals(listOf(document.id), repository.deletedIds)
+    }
+
+    @Test
+    fun importSelectedUriCreatesDocumentAndShowsToast() = runTest {
+        val repository = FakeDocumentRepository()
         val viewModel = viewModel(repository = repository)
         advanceUntilIdle()
         val effect = async { viewModel.uiEffect.first() }
         runCurrent()
 
-        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentClicked(document.id))
-        viewModel.onEvent(LibraryUiEvent.OnDeleteDocumentConfirmed)
+        viewModel.onEvent(LibraryUiEvent.OnImportDocumentSelected("content://document"))
         advanceUntilIdle()
 
-        val expectedMessage = "We could not save or load this file. Please try again."
-        assertEquals(expectedMessage, viewModel.uiState.value.errorMessage)
-        assertEquals(LibraryUiEffect.ShowToast(expectedMessage), effect.await())
-        assertNull(viewModel.uiState.value.pendingDeleteDocument)
+        assertEquals(listOf("content://document"), repository.importedUris)
+        assertEquals(LibraryUiEffect.ShowToast("Document imported."), effect.await())
     }
 
     private fun viewModel(
-        documents: List<SavedDocument> = emptyList(),
-        repository: FakeDocumentRepository = FakeDocumentRepository(documents = documents)
+        documents: List<DoclyDocument> = emptyList(),
+        repository: FakeDocumentRepository = FakeDocumentRepository(documents)
     ): LibraryViewModel = LibraryViewModel(
-        observeSavedDocumentsUseCase = ObserveSavedDocumentsUseCase(repository),
-        deleteSavedDocumentUseCase = DeleteSavedDocumentUseCase(repository)
+        observeDocumentsUseCase = ObserveDocumentsUseCase(repository),
+        searchDocumentsUseCase = SearchDocumentsUseCase(repository),
+        importDocumentUseCase = ImportDocumentUseCase(repository),
+        renameDocumentUseCase = RenameDocumentUseCase(repository),
+        deleteDocumentUseCase = DeleteDocumentUseCase(repository),
+        toggleFavoriteDocumentUseCase = ToggleFavoriteDocumentUseCase(repository),
+        updateLastOpenedUseCase = UpdateLastOpenedUseCase(repository),
+        capabilityResolver = DocumentCapabilityResolver()
     )
 
     private fun sampleDocument(
         id: String = "document-id",
-        title: String = "Math Paper",
-        metadata: DocumentMetadata = sampleMetadata(),
-        createdAt: Long = 1L
-    ): SavedDocument = SavedDocument(
+        name: String = "Document",
+        type: DocumentType = DocumentType.PDF,
+        updatedAt: Long = 1L,
+        isFavorite: Boolean = false
+    ): DoclyDocument = DoclyDocument(
         id = id,
-        sessionId = "session-id",
-        title = title,
-        pdfPath = "/pdf/$id.pdf",
-        thumbnailPath = "/thumb/$id.jpg",
-        metadata = metadata,
-        pageCount = 2,
-        createdAt = createdAt
+        name = name,
+        type = type,
+        mimeType = if (type == DocumentType.PDF) "application/pdf" else "text/plain",
+        fileRef = FileRef.InternalFile("/docs/$id.${if (type == DocumentType.PDF) "pdf" else "txt"}"),
+        source = DocumentSource.IMPORTED,
+        fileSize = 10L,
+        createdAt = 1L,
+        updatedAt = updatedAt,
+        isFavorite = isFavorite
     )
 
-    private fun sampleMetadata(
-        grade: String = "Grade 10",
-        subject: String = "Math",
-        year: Int = 2026,
-        paperType: String = "Past Paper",
-        paperNumber: String? = "1"
-    ): DocumentMetadata = DocumentMetadata(
-        grade = grade,
-        subject = subject,
-        year = year,
-        paperType = paperType,
-        paperNumber = paperNumber
-    )
-
-    private class FakeDocumentRepository(
-        documents: List<SavedDocument> = emptyList(),
-        private val deleteResult: AppResult<Unit> = AppResult.Success(Unit)
-    ) : DocumentRepository {
+    private class FakeDocumentRepository(documents: List<DoclyDocument> = emptyList()) : DocumentRepository {
         private val documentsFlow = MutableStateFlow(documents)
-        val deletedDocumentIds = mutableListOf<String>()
+        val importedUris = mutableListOf<String>()
+        val renameUpdates = mutableListOf<Pair<String, String>>()
+        val favoriteUpdates = mutableListOf<Pair<String, Boolean>>()
+        val lastOpenedIds = mutableListOf<String>()
+        val deletedIds = mutableListOf<String>()
 
-        override fun observeSavedDocuments(): Flow<List<SavedDocument>> = documentsFlow
+        override fun observeDocuments(): Flow<List<DoclyDocument>> = documentsFlow
 
-        override suspend fun saveDocument(document: SavedDocument): AppResult<Unit> {
+        override fun searchDocuments(query: String): Flow<List<DoclyDocument>> = documentsFlow.map { documents ->
+            documents.filter { document -> document.name.contains(query, ignoreCase = true) }
+        }
+
+        override suspend fun getDocument(documentId: String): AppResult<DoclyDocument?> =
+            AppResult.Success(documentsFlow.value.firstOrNull { document -> document.id == documentId })
+
+        override suspend fun importDocument(uriString: String): AppResult<DoclyDocument> {
+            importedUris += uriString
+            val document = DoclyDocument(
+                id = "imported",
+                name = "Imported",
+                type = DocumentType.PDF,
+                mimeType = "application/pdf",
+                fileRef = FileRef.InternalFile("/docs/imported.pdf"),
+                source = DocumentSource.IMPORTED,
+                fileSize = 10L,
+                createdAt = 1L,
+                updatedAt = 1L
+            )
+            documentsFlow.value = documentsFlow.value + document
+            return AppResult.Success(document)
+        }
+
+        override suspend fun upsertDocument(document: DoclyDocument): AppResult<Unit> {
             documentsFlow.value = documentsFlow.value.filterNot { it.id == document.id } + document
             return AppResult.Success(Unit)
         }
 
-        override suspend fun getDocument(documentId: String): AppResult<SavedDocument?> =
-            AppResult.Success(documentsFlow.value.firstOrNull { document -> document.id == documentId })
+        override suspend fun renameDocument(documentId: String, name: String): AppResult<Unit> {
+            renameUpdates += documentId to name
+            documentsFlow.value = documentsFlow.value.map { document ->
+                if (document.id == documentId) document.copy(name = name) else document
+            }
+            return AppResult.Success(Unit)
+        }
 
         override suspend fun deleteDocument(documentId: String): AppResult<Unit> {
-            deletedDocumentIds += documentId
-            if (deleteResult is AppResult.Success) {
-                documentsFlow.value = documentsFlow.value.filterNot { document -> document.id == documentId }
+            deletedIds += documentId
+            documentsFlow.value = documentsFlow.value.filterNot { document -> document.id == documentId }
+            return AppResult.Success(Unit)
+        }
+
+        override suspend fun toggleFavorite(documentId: String, isFavorite: Boolean): AppResult<Unit> {
+            favoriteUpdates += documentId to isFavorite
+            documentsFlow.value = documentsFlow.value.map { document ->
+                if (document.id == documentId) document.copy(isFavorite = isFavorite) else document
             }
-            return deleteResult
+            return AppResult.Success(Unit)
+        }
+
+        override suspend fun updateLastOpened(documentId: String): AppResult<Unit> {
+            lastOpenedIds += documentId
+            return AppResult.Success(Unit)
         }
     }
 

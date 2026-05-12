@@ -16,13 +16,13 @@ interface ScannedPageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(pages: List<ScannedPageEntity>)
 
-    @Query("SELECT * FROM scanned_pages WHERE sessionId = :sessionId ORDER BY pageIndex ASC")
+    @Query("SELECT * FROM scan_pages WHERE sessionId = :sessionId ORDER BY pageIndex ASC")
     suspend fun getBySessionId(sessionId: String): List<ScannedPageEntity>
 
-    @Query("SELECT * FROM scanned_pages")
+    @Query("SELECT * FROM scan_pages")
     suspend fun getAll(): List<ScannedPageEntity>
 
-    @Query("SELECT * FROM scanned_pages WHERE id = :pageId")
+    @Query("SELECT * FROM scan_pages WHERE id = :pageId")
     suspend fun getById(pageId: String): ScannedPageEntity?
 
     @Update
@@ -31,6 +31,6 @@ interface ScannedPageDao {
     @Delete
     suspend fun delete(page: ScannedPageEntity)
 
-    @Query("DELETE FROM scanned_pages WHERE sessionId = :sessionId")
+    @Query("DELETE FROM scan_pages WHERE sessionId = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
 }

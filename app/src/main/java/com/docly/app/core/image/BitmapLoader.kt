@@ -9,6 +9,7 @@ import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.roundToInt
 import kotlinx.coroutines.withContext
 
 data class ImageDimensions(val width: Int, val height: Int)
@@ -48,7 +49,24 @@ class AndroidBitmapLoader @Inject constructor(private val dispatcherProvider: Di
                         category = AppErrorCategory.PROCESSING
                     )
 
-                AppResult.Success(applyExifTransform(path = path, bitmap = decoded))
+                var outputBitmap: Bitmap? = decoded
+                try {
+                    val orientedBitmap = applyExifTransform(path = path, bitmap = decoded)
+                    if (orientedBitmap !== outputBitmap) {
+                        outputBitmap = null
+                    }
+                    outputBitmap = orientedBitmap
+
+                    val boundedBitmap = orientedBitmap.scaleToFit(maxWidth = maxWidth, maxHeight = maxHeight)
+                    if (boundedBitmap !== orientedBitmap) {
+                        outputBitmap = null
+                    }
+
+                    AppResult.Success(boundedBitmap)
+                } catch (throwable: Throwable) {
+                    outputBitmap?.recycle()
+                    throw throwable
+                }
             } catch (throwable: Throwable) {
                 AppResult.Error(
                     message = "Image could not be decoded.",
@@ -72,6 +90,30 @@ fun calculateBitmapSampleSize(sourceWidth: Int, sourceHeight: Int, maxWidth: Int
         sampleSize *= DOUBLE_SAMPLE_SIZE
     }
     return sampleSize
+}
+
+fun calculateFittedImageDimensions(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    maxWidth: Int,
+    maxHeight: Int
+): ImageDimensions {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || maxWidth <= 0 || maxHeight <= 0) {
+        return ImageDimensions(
+            width = sourceWidth.coerceAtLeast(1),
+            height = sourceHeight.coerceAtLeast(1)
+        )
+    }
+
+    val scale = minOf(
+        maxWidth.toFloat() / sourceWidth.toFloat(),
+        maxHeight.toFloat() / sourceHeight.toFloat(),
+        1f
+    )
+    return ImageDimensions(
+        width = (sourceWidth * scale).roundToInt().coerceAtLeast(1),
+        height = (sourceHeight * scale).roundToInt().coerceAtLeast(1)
+    )
 }
 
 fun readRawImageDimensions(path: String): ImageDimensions? {
@@ -115,6 +157,24 @@ private fun applyExifTransform(path: String, bitmap: Bitmap): Bitmap {
         bitmap.recycle()
     }
     return transformed
+}
+
+private fun Bitmap.scaleToFit(maxWidth: Int, maxHeight: Int): Bitmap {
+    val targetDimensions = calculateFittedImageDimensions(
+        sourceWidth = width,
+        sourceHeight = height,
+        maxWidth = maxWidth,
+        maxHeight = maxHeight
+    )
+    if (targetDimensions.width == width && targetDimensions.height == height) {
+        return this
+    }
+
+    val scaledBitmap = Bitmap.createScaledBitmap(this, targetDimensions.width, targetDimensions.height, true)
+    if (scaledBitmap !== this) {
+        recycle()
+    }
+    return scaledBitmap
 }
 
 private fun matrixForExifOrientation(orientation: Int): Matrix? {

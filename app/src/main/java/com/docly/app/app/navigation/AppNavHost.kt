@@ -16,7 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import com.docly.app.core.file.PdfIntentFactory
+import com.docly.app.core.file.DocumentIntentFactory
 import com.docly.app.core.result.AppResult
 import com.docly.app.feature.editor.EditorScreen
 import com.docly.app.feature.editor.EditorUiEffect
@@ -24,12 +24,14 @@ import com.docly.app.feature.editor.EditorViewModel
 import com.docly.app.feature.export.ExportScreen
 import com.docly.app.feature.export.ExportUiEffect
 import com.docly.app.feature.export.ExportViewModel
+import com.docly.app.feature.home.HomeScreen
 import com.docly.app.feature.library.LibraryScreen
 import com.docly.app.feature.library.LibraryUiEffect
 import com.docly.app.feature.library.LibraryViewModel
 import com.docly.app.feature.metadata.MetadataScreen
 import com.docly.app.feature.metadata.MetadataUiEffect
 import com.docly.app.feature.metadata.MetadataViewModel
+import com.docly.app.feature.placeholder.PlaceholderScreen
 import com.docly.app.feature.review.ReviewScreen
 import com.docly.app.feature.review.ReviewUiEffect
 import com.docly.app.feature.review.ReviewViewModel
@@ -41,13 +43,34 @@ import com.docly.app.feature.scanner.ScannerViewModel
 fun AppNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
-    pdfIntentFactory: PdfIntentFactory
+    documentIntentFactory: DocumentIntentFactory
 ) {
     NavHost(
         navController = navController,
-        startDestination = ScannerRoute(),
+        startDestination = HomeRoute,
         modifier = modifier
     ) {
+        composable<HomeRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<LibraryViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            HomeScreen(
+                uiState = uiState,
+                onOpenDocuments = {
+                    navController.navigate(LibraryRoute) {
+                        launchSingleTop = true
+                    }
+                },
+                onStartScanner = {
+                    navController.navigate(ScannerRoute()) {
+                        launchSingleTop = true
+                    }
+                },
+                onOpenCreate = { navController.navigate(CreateRoute) },
+                onOpenTools = { navController.navigate(ToolsRoute) },
+                onOpenSettings = { navController.navigate(SettingsRoute) }
+            )
+        }
+
         composable<ScannerRoute> { backStackEntry ->
             val viewModel = hiltViewModel<ScannerViewModel>(backStackEntry)
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -184,17 +207,21 @@ fun AppNavHost(
                         }
 
                         is ExportUiEffect.OpenPdf -> {
-                            context.startPdfIntent(
-                                intentResult = pdfIntentFactory.createOpenIntent(effect.pdfPath),
+                            context.startDocumentIntent(
+                                intentResult = documentIntentFactory.createOpenIntent(
+                                    filePath = effect.pdfPath,
+                                    mimeType = "application/pdf"
+                                ),
                                 noHandlerMessage = "No PDF viewer is available."
                             )
                         }
 
                         is ExportUiEffect.SharePdf -> {
-                            context.startPdfIntent(
-                                intentResult = pdfIntentFactory.createShareIntent(
-                                    pdfPath = effect.pdfPath,
-                                    title = effect.title
+                            context.startDocumentIntent(
+                                intentResult = documentIntentFactory.createShareIntent(
+                                    filePath = effect.pdfPath,
+                                    title = effect.title,
+                                    mimeType = "application/pdf"
                                 ),
                                 noHandlerMessage = "No app is available to share this PDF."
                             )
@@ -220,20 +247,26 @@ fun AppNavHost(
             LaunchedEffect(viewModel) {
                 viewModel.uiEffect.collect { effect ->
                     when (effect) {
-                        is LibraryUiEffect.OpenPdf -> {
-                            context.startPdfIntent(
-                                intentResult = pdfIntentFactory.createOpenIntent(effect.pdfPath),
-                                noHandlerMessage = "No PDF viewer is available."
+                        LibraryUiEffect.LaunchImportPicker -> Unit
+
+                        is LibraryUiEffect.OpenDocument -> {
+                            context.startDocumentIntent(
+                                intentResult = documentIntentFactory.createOpenIntent(
+                                    filePath = effect.filePath,
+                                    mimeType = effect.mimeType
+                                ),
+                                noHandlerMessage = "No app is available to open this document."
                             )
                         }
 
-                        is LibraryUiEffect.SharePdf -> {
-                            context.startPdfIntent(
-                                intentResult = pdfIntentFactory.createShareIntent(
-                                    pdfPath = effect.pdfPath,
-                                    title = effect.title
+                        is LibraryUiEffect.ShareDocument -> {
+                            context.startDocumentIntent(
+                                intentResult = documentIntentFactory.createShareIntent(
+                                    filePath = effect.filePath,
+                                    title = effect.title,
+                                    mimeType = effect.mimeType
                                 ),
-                                noHandlerMessage = "No app is available to share this PDF."
+                                noHandlerMessage = "No app is available to share this document."
                             )
                         }
 
@@ -253,10 +286,42 @@ fun AppNavHost(
                 }
             )
         }
+
+        composable<SearchRoute> {
+            PlaceholderScreen(
+                title = "Search",
+                message = "Document search is available from the Documents screen in this phase.",
+                onNavigateBack = navController::popBackStack
+            )
+        }
+
+        composable<CreateRoute> {
+            PlaceholderScreen(
+                title = "Create",
+                message = "TXT, Markdown, and HTML creation are planned after the document foundation.",
+                onNavigateBack = navController::popBackStack
+            )
+        }
+
+        composable<ToolsRoute> {
+            PlaceholderScreen(
+                title = "Tools",
+                message = "Conversion and PDF tools will appear here when those phases are implemented.",
+                onNavigateBack = navController::popBackStack
+            )
+        }
+
+        composable<SettingsRoute> {
+            PlaceholderScreen(
+                title = "Settings",
+                message = "Document defaults and appearance settings are planned for a later phase.",
+                onNavigateBack = navController::popBackStack
+            )
+        }
     }
 }
 
-private fun Context.startPdfIntent(intentResult: AppResult<Intent>, noHandlerMessage: String) {
+private fun Context.startDocumentIntent(intentResult: AppResult<Intent>, noHandlerMessage: String) {
     when (intentResult) {
         is AppResult.Error -> {
             Toast.makeText(this, intentResult.message, Toast.LENGTH_SHORT).show()

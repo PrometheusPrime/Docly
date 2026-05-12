@@ -1,6 +1,7 @@
 package com.docly.app.feature.scanner
 
 import com.docly.app.core.camera.PreviewDocumentBoundary
+import com.docly.app.core.camera.PreviewFrameAnalysis
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.ScanMode
 
@@ -13,9 +14,11 @@ sealed interface ScannerUiEvent {
     data object OnFlashToggleClicked : ScannerUiEvent
     data class OnCaptureClicked(val captureAction: ScannerCaptureAction) : ScannerUiEvent
     data class OnImportPhotosSelected(val sourceUris: List<String>) : ScannerUiEvent
+    data class OnAutoCaptureEnabledChanged(val enabled: Boolean) : ScannerUiEvent
     data object OnResumeRecoveredSessionClicked : ScannerUiEvent
     data object OnDiscardRecoveredSessionClicked : ScannerUiEvent
     data class OnScanModeChanged(val scanMode: ScanMode) : ScannerUiEvent
     data class OnCornersDetected(val corners: PageCorners?) : ScannerUiEvent
     data class OnPreviewDocumentBoundaryChanged(val boundary: PreviewDocumentBoundary?) : ScannerUiEvent
+    data class OnPreviewFrameAnalysisChanged(val analysis: PreviewFrameAnalysis?) : ScannerUiEvent
 }

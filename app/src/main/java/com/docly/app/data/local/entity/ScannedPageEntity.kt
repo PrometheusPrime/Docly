@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "scanned_pages",
+    tableName = "scan_pages",
     foreignKeys = [
         ForeignKey(
             entity = ScanSessionEntity::class,

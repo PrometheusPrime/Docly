@@ -6,6 +6,7 @@ import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.errorOrNull
 import com.docly.app.domain.model.DocumentMetadata
+import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
@@ -206,16 +207,51 @@ class FileRepositoryImplTest {
     }
 
     private class TempAppFileDirectories(root: File) : AppFileDirectories {
+        override val doclyRootDirectory: File = File(root, "docly")
         override val rawScanDirectory: File = File(root, "scans/raw")
         override val processedScanDirectory: File = File(root, "scans/processed")
         override val thumbnailDirectory: File = File(root, "scans/thumbnails")
         override val pdfDirectory: File = File(root, "documents/pdf")
+        override val txtDirectory: File = File(root, "documents/txt")
+        override val markdownDirectory: File = File(root, "documents/markdown")
+        override val htmlDirectory: File = File(root, "documents/html")
+        override val docxDirectory: File = File(root, "documents/docx")
+        override val xlsxDirectory: File = File(root, "documents/xlsx")
+        override val csvDirectory: File = File(root, "documents/csv")
+        override val imageDirectory: File = File(root, "documents/images")
+        override val exportDirectory: File = File(root, "exports")
+        override val tempDirectory: File = File(root, "temp")
+        override val ocrDirectory: File = File(root, "ocr")
+
+        override fun documentDirectory(type: DocumentType): File = when (type) {
+            DocumentType.PDF -> pdfDirectory
+            DocumentType.TXT -> txtDirectory
+            DocumentType.MARKDOWN -> markdownDirectory
+            DocumentType.HTML -> htmlDirectory
+            DocumentType.DOCX -> docxDirectory
+            DocumentType.XLSX -> xlsxDirectory
+            DocumentType.CSV -> csvDirectory
+            DocumentType.IMAGE -> imageDirectory
+            DocumentType.UNKNOWN -> tempDirectory
+        }
 
         override fun ensureDirectories() {
-            rawScanDirectory.mkdirs()
-            processedScanDirectory.mkdirs()
-            thumbnailDirectory.mkdirs()
-            pdfDirectory.mkdirs()
+            listOf(
+                rawScanDirectory,
+                processedScanDirectory,
+                thumbnailDirectory,
+                pdfDirectory,
+                txtDirectory,
+                markdownDirectory,
+                htmlDirectory,
+                docxDirectory,
+                xlsxDirectory,
+                csvDirectory,
+                imageDirectory,
+                exportDirectory,
+                tempDirectory,
+                ocrDirectory
+            ).forEach { it.mkdirs() }
         }
     }
 

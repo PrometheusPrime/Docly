@@ -24,8 +24,8 @@ interface ScanSessionDao {
         SELECT * FROM scan_sessions
         WHERE status = :status
         AND EXISTS (
-            SELECT 1 FROM scanned_pages
-            WHERE scanned_pages.sessionId = scan_sessions.id
+            SELECT 1 FROM scan_pages
+            WHERE scan_pages.sessionId = scan_sessions.id
         )
         ORDER BY updatedAt DESC
         LIMIT 1

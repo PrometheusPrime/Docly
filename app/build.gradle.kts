@@ -8,6 +8,25 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
+val doclyVersionCode = providers.gradleProperty("docly.versionCode")
+    .map(String::toInt)
+    .get()
+val doclyVersionName = providers.gradleProperty("docly.versionName").get()
+
+val releaseStoreFile = providers.gradleProperty("DOCLY_RELEASE_STORE_FILE")
+    .orElse(providers.environmentVariable("DOCLY_RELEASE_STORE_FILE"))
+val releaseStorePassword = providers.gradleProperty("DOCLY_RELEASE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("DOCLY_RELEASE_STORE_PASSWORD"))
+val releaseKeyAlias = providers.gradleProperty("DOCLY_RELEASE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("DOCLY_RELEASE_KEY_ALIAS"))
+val releaseKeyPassword = providers.gradleProperty("DOCLY_RELEASE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("DOCLY_RELEASE_KEY_PASSWORD"))
+val hasReleaseSigning = listOf(
+    releaseStoreFile.orNull,
+    releaseStorePassword.orNull,
+    releaseKeyAlias.orNull,
+    releaseKeyPassword.orNull
+).all { value -> !value.isNullOrBlank() }
 android {
     namespace = "com.docly.app"
     compileSdk {
@@ -20,15 +39,30 @@ android {
         applicationId = "com.docly.app"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = doclyVersionCode
+        versionName = doclyVersionName
 
         testInstrumentationRunner = "com.docly.app.HiltTestRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -41,6 +75,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -94,11 +129,11 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.coil.compose)
-    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.opencv)
     implementation(libs.kotlinx.coroutines.android)
 
     ksp(libs.hilt.compiler)
+    ksp(libs.androidx.hilt.compiler)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
@@ -107,6 +142,7 @@ dependencies {
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.hilt.android.testing)
     kspTest(libs.hilt.compiler)
+    kspTest(libs.androidx.hilt.compiler)
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -117,6 +153,7 @@ dependencies {
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.hilt.android.testing)
     kspAndroidTest(libs.hilt.compiler)
+    kspAndroidTest(libs.androidx.hilt.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

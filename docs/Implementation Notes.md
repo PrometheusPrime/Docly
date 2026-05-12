@@ -1,5 +1,11 @@
 # Implementation Notes
 
+Current roadmap note:
+
+- Entries dated before 2026-05-11 are historical implementation records from the earlier scanner-focused plan.
+- The active product direction is the 2026-05-11 documentation reset: Docly is a local-first document utility for scanning, reading, creating, editing, converting, managing, and sharing documents.
+- Use `Implementation Roadmap.md`, `Technical Architecture.md`, `Low-Level Design (LLD).md`, and `Build Roadmap.md` as the current planning source of truth.
+
 ## 2026-04-18 - Phase 01 Baseline Audit
 
 Scope:
@@ -664,3 +670,233 @@ Validation:
 - A combined targeted connected run for `RoomRepositoryTest` and `ScannerScreenStateTest` first failed because the new cleanup test returned `Boolean`; after fixing the test signature, a second combined run stalled at 7/26 tests for several minutes and was stopped.
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.scanner.ScannerScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 3s`; 10 scanner connected tests passed on `TECNO KL5 - 14`.
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.data.local.RoomRepositoryTest#scanRepositoryLoadsLatestRecoverableInProgressSessionWithPages,com.docly.app.data.local.RoomRepositoryTest#scanRepositoryAbandonsInProgressSessionAndDeletesPageRowsBeforeAssetCleanup,com.docly.app.data.local.RoomRepositoryTest#scanRepositoryDeletePageIsIdempotentWhenPageIsMissing,com.docly.app.data.local.RoomRepositoryTest#documentRepositoryDeleteDocumentIsIdempotentWhenDocumentIsMissing,com.docly.app.data.local.RoomRepositoryTest#cleanupRepositoryDeletesOnlyUnreferencedManagedFiles --console=plain` completed with `BUILD SUCCESSFUL in 2m 34s`; 5 Phase 25 Room connected tests passed on `TECNO KL5 - 14`.
+
+## 2026-05-04 - Phase 26 Scan Quality Scoring
+
+Scope:
+
+- Added recomputed, non-persisted scan quality scoring for blur, brightness, overexposure, document area, and missing document detection.
+- Added CameraX preview analysis that emits both document boundary and quality assessment from the existing analysis frame.
+- Added scanner preview hints for document not detected, move closer, improve lighting, and hold steady.
+- Added post-capture review warnings with Continue and Rescan choices; Accept is blocked until the warning is deliberately continued.
+- Wired raw-image review quality evaluation through `ImageProcessingRepository` and `EvaluateScanQualityUseCase`.
+
+Implementation decisions:
+
+- Quality results are advisory and not stored in Room, avoiding a migration for MVP.
+- Review quality warnings are limited to pending pages; accepted pages and quality-evaluation failures do not block review.
+- The blur score uses signed Laplacian variance over a bounded luminance buffer so it remains testable outside Android UI.
+- Preview hint priority is document missing, document too small, lighting, then blur.
+
+Tests:
+
+- Added JVM scorer coverage for good, blurry, dark, bright, overexposed, missing-document, and small-document synthetic luminance cases.
+- Added repository and use-case coverage for quality evaluation delegation and error propagation.
+- Expanded scanner ViewModel tests for preview quality hint priority and clearing.
+- Expanded review ViewModel tests for warning display, Continue override, Rescan flow, passing quality, evaluation failure, and crop-change recomputation.
+- Added connected Compose state coverage for scanner quality hint rendering and review warning Continue/Rescan controls.
+
+Validation:
+
+- First targeted Phase 26 unit run failed because the blur score used absolute Laplacian values; switching to signed Laplacian variance fixed the scorer.
+- Targeted Phase 26 unit pass: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --tests com.docly.app.core.image.DefaultScanQualityScorerTest --tests com.docly.app.data.repository.ImageProcessingRepositoryImplTest --tests com.docly.app.domain.EvaluateScanQualityUseCaseTest --tests com.docly.app.feature.scanner.ScannerViewModelTest --tests com.docly.app.feature.review.ReviewViewModelTest --console=plain` completed with `BUILD SUCCESSFUL in 5m 52s`.
+- First `:app:ktlintCheck` runs exposed formatting issues in new main and test code; the formatting was fixed.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck --console=plain` completed with `BUILD SUCCESSFUL in 1m 17s`.
+- Final `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL in 7m 10s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 8m 16s`.
+- `adb devices` reported no attached devices, so targeted connected scanner/review quality UI tests were compiled but not run in this session.
+
+## 2026-05-04 - Phase 27 Performance Hardening
+
+Scope:
+
+- Added a strict post-orientation bitmap fit so `BitmapLoader.decode(path, maxWidth, maxHeight)` never returns a bitmap larger than the requested bounds after EXIF rotation or mirroring.
+- Shortened decoded bitmap lifetimes in thumbnail generation, perspective correction, and enhancement by recycling source bitmaps once derived output bitmaps are available.
+- Bounded CameraX preview analysis with a `720 x 960` target resolution selector, `KEEP_ONLY_LATEST` backpressure, and a 720px max long-edge analysis frame.
+- Reworked preview analysis to use the first luminance plane as a compact grayscale OpenCV `Mat` instead of allocating RGBA frame buffers.
+- Migrated editor and library rendering to keyed `LazyColumn` content through a shared lazy scaffold.
+- Limited editor list images to saved thumbnails only; missing thumbnails now render the existing placeholder instead of falling back to processed or raw full-page paths.
+
+Implementation decisions:
+
+- Full-quality `ImageCapture` remains unchanged; only preview analysis and decode/render paths are downsampled.
+- Review still renders raw or processed paths because it shows one page at a time and needs full-page inspection.
+- No Room schema, domain repository contract, pagination API, or benchmark module was added for Phase 27.
+- The full non-interactive 20-page real scan/import workflow was not run because it requires camera capture or Android Photo Picker media selection. Connected UI tests now cover 20-row editor and library list stress, and device profiling covered startup plus scanner idle with camera permission granted.
+
+Tests:
+
+- Expanded `BitmapLoaderTest` for invalid bounds and fitted-dimension calculations.
+- Expanded editor connected UI coverage for a 20-page lazy list and missing-thumbnail placeholder behavior.
+- Expanded library connected UI coverage for a 20-document lazy list and missing-thumbnail placeholder behavior.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintFormat :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL in 5m 58s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintFormat :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL in 6m 2s`.
+- Requested build gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 6m 52s`.
+- `adb devices` reported attached device `1268015548000502`; device properties identified it as `TECNO KL5`, Android `14`.
+- Targeted connected UI coverage: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.editor.EditorScreenStateTest,com.docly.app.feature.library.LibraryScreenStateTest,com.docly.app.feature.scanner.ScannerScreenStateTest,com.docly.app.feature.review.ReviewScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 4m 31s`; 33 tests passed on `TECNO KL5 - 14`.
+- Profiling artifacts were stored in `/tmp/codex-android-perf.3ozSQC`.
+- Startup/debug scanner snapshot after app install: `meminfo-startup-installed.txt` reported `TOTAL PSS 149320 KB`, `Java Heap 18088 KB`, `Native Heap 10628 KB`, `Graphics 36384 KB`, 1 activity, and 7 views. The matching `gfxinfo-startup-installed.txt` had only one cold-start frame, so it was not used as scrolling evidence.
+- Scanner idle snapshot with camera permission granted and `gfxinfo` reset after launch: `meminfo-camera-idle.txt` reported `TOTAL PSS 197123 KB`, `Java Heap 33548 KB`, `Native Heap 13096 KB`, `Graphics 48356 KB`, 1 activity, and 12 views. `gfxinfo-camera-idle.txt` reported 79 frames, 8 janky frames, 50th percentile 12ms, 90th percentile 31ms, and no slow bitmap uploads.
+
+## 2026-05-04 - Phase 28 Accessibility, Adaptive Layouts, and UI Polish
+
+Scope:
+
+- Added shared adaptive Compose layout helpers for compact-width and large-font action stacking, minimum touch targets, reduced compact padding, and tablet max-width content.
+- Added polite live-region semantics and content descriptions to shared loading, error, empty, image thumbnail, camera preview, scanner/library actions, dialogs, and crop handles.
+- Added destructive confirmations for recovered-session discard, review rescan, and editor page delete while preserving existing ViewModel events and leaving export/open/share/navigation actions direct.
+- Improved large-text resilience across scanner controls, recovery and quality prompts, review/editor/library action groups, exported actions, and editor/library rows.
+- Added blocking error state handling for unavailable metadata sessions and unavailable export previews.
+
+Implementation decisions:
+
+- No Room schema, navigation route, domain model, repository contract, or persisted UI state change was added for Phase 28.
+- Destructive confirmations are local Compose state and dispatch existing events only after confirmation.
+- The adaptive layout uses conservative width/font-scale thresholds and keeps the existing single-pane navigation architecture.
+- Crop handles were increased to 48dp so manual crop controls meet minimum touch-target expectations.
+
+Tests:
+
+- Expanded connected Compose coverage for key content descriptions, destructive confirmation dialogs, large-font compact-width rendering, shared state semantics, metadata/export blocking error states, and adaptive action reachability.
+- Existing editor/library 20-row lazy-list coverage continues to validate larger content sets after the adaptive layout changes.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintFormat :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin --console=plain` initially exposed one ktlint constant-naming issue and one stale `assertExists` import; both were fixed. The narrowed rerun of `:app:compileDebugAndroidTestKotlin` completed with `BUILD SUCCESSFUL in 3m 56s`.
+- Requested local gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 5m 27s`.
+- `adb devices` reported attached device `1268015548000502` (`TECNO KL5 - 14`).
+- First targeted connected UI run failed one scanner assertion because the Phase 28 progress text changed from the button label to explicit loading content; the test was updated to assert `Capturing page...` and scroll to the disabled capture action.
+- A later combined targeted connected run stalled before test progress after ADB restarted. Logcat showed device idleness blocked by background `com.instagram.android`; after force-stopping that app and splitting the suite, connected validation passed.
+- Scanner connected coverage: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.scanner.ScannerScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 24s`; 13 tests passed on `TECNO KL5 - 14`.
+- Remaining Phase 28 connected UI coverage: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.docly.app.feature.review.ReviewScreenStateTest,com.docly.app.feature.editor.EditorScreenStateTest,com.docly.app.feature.metadata.MetadataScreenStateTest,com.docly.app.feature.export.ExportScreenStateTest,com.docly.app.feature.library.LibraryScreenStateTest,com.docly.app.ui.components.ThumbnailScreenStateTest --console=plain` completed with `BUILD SUCCESSFUL in 4m 2s`; 41 tests passed on `TECNO KL5 - 14`.
+
+## 2026-05-04 - Phase 29 Release Hardening
+
+Scope:
+
+- Added release version discipline through `docly.versionCode=29` and `docly.versionName=0.29.0` in Gradle properties.
+- Added optional release signing from `DOCLY_RELEASE_STORE_FILE`, `DOCLY_RELEASE_STORE_PASSWORD`, `DOCLY_RELEASE_KEY_ALIAS`, and `DOCLY_RELEASE_KEY_PASSWORD`, accepted as Gradle properties or environment variables.
+- Enabled release minification and resource shrinking with R8 while keeping `proguard-android-optimize.txt`.
+- Removed the unused WorkManager runtime dependency and version-catalog entry.
+- Disabled Android backup and replaced generated sample backup XMLs with explicit private-data exclusions for legacy backup, cloud backup, and device transfer.
+- Added privacy notes and an internal release checklist, and linked both from the README.
+
+Implementation decisions:
+
+- No Kotlin/domain/UI API, Room schema, navigation route, repository contract, or user-facing workflow change was added for Phase 29.
+- The app-declared runtime permission remains `android.permission.CAMERA`; a transitive `androidx.media3` `ACCESS_NETWORK_STATE` permission was explicitly removed through the manifest merger.
+- The merged release manifest still contains AndroidX Core's signature-only `com.docly.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`; it is an app-local protection permission, not an Android runtime or network/storage permission.
+- `FileProvider` remains limited to `documents/pdf/` and keeps `exported=false` with temporary URI grants for explicit open/share actions.
+- `org.gradle.jvmargs` now includes `-XX:TieredStopAtLevel=1` because the first minified release run stayed in R8 for an impractically long time while the JVM compiled R8 optimizer code; with the tiering cap persisted, the requested release gate completes.
+- No broad CameraX, Room, Hilt, OpenCV, or Coil keep/dontwarn rules were added because R8 produced no missing-class or reflection failure.
+
+Validation:
+
+- Final release gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:assembleRelease --console=plain` completed with `BUILD SUCCESSFUL in 10m 40s`; 92 actionable tasks, 15 executed and 77 up to date.
+- The minified unsigned release artifact was generated at `app/build/outputs/apk/release/app-release-unsigned.apk`; `output-metadata.json` reports `versionCode` 29 and `versionName` `0.29.0`.
+- The merged release manifest reports `android:allowBackup="false"`, `android.permission.CAMERA`, optional `android.hardware.camera.any`, and the existing PDF `FileProvider`.
+- The merged release manifest does not contain `INTERNET`, broad storage/media permissions, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, or `FOREGROUND_SERVICE`.
+- No `DOCLY_RELEASE_*` signing values were present in this shell, so no signed `app-release.apk` was produced.
+- `adb devices` reported no attached devices after starting ADB, so the signed release install and real-device smoke checklist were documented but not run in this session.
+
+## 2026-05-06 - Phase 30 Post-MVP Foundations
+
+Scope:
+
+- Added bundled ML Kit OCR for Latin, Chinese, Devanagari, Japanese, and Korean text recognition, with OCR scheduled after successful PDF export and kept non-blocking for the export flow.
+- Added a separate OCR persistence path with document OCR status/result rows plus an FTS-backed text index used by library search.
+- Replaced library in-memory filtering with repository-backed metadata and OCR search while preserving the existing empty and no-results states.
+- Added explicit manual document upload from the library, including upload status display, retry action, WorkManager scheduling with network constraints, exponential backoff, and local state transitions.
+- Added the unauthenticated signed-upload client contract: create upload intent, PUT PDF and optional thumbnail to signed URLs, then call the completion endpoint.
+- Added local structured diagnostics for OCR, upload, processing, camera compatibility, and auto-capture suppression; diagnostics remain local only.
+- Added scanner auto-capture controls and stability gating while keeping manual capture available.
+- Updated privacy/release documentation for explicit manual upload, local diagnostics, network permissions, and the blank-by-default `DOCLY_BACKEND_BASE_URL` behavior.
+
+Implementation decisions:
+
+- Room was bumped from schema version `2` to `3`; `MIGRATION_2_3` adds OCR, FTS, diagnostics, and upload-state storage, and schema `3.json` was generated.
+- OCR text is stored separately from scan/PDF records. OCR failures update OCR status and diagnostics but do not alter the saved PDF or saved document row.
+- `DoclyApplication` now provides WorkManager configuration through injected `HiltWorkerFactory`, and WorkManager's default initializer is removed from the manifest.
+- Upload is never automatic after export. A blank `BuildConfig.DOCLY_BACKEND_BASE_URL` makes upload scheduling fail with a clear not-configured error.
+- Upload workers retry transient HTTP failures (`408`, `429`, and `5xx`) and treat other backend errors as permanent failures for this phase.
+- No analytics SDK, analytics events, remote diagnostics upload, or auth header was added.
+- Release minification and shrinking remain enabled, but `-dontoptimize` was added to R8 after the bundled OCR release build stayed in optimization for more than an hour.
+
+Tests:
+
+- Added OCR use-case and merge/deduplication coverage with fake OCR engines.
+- Added upload repository coverage for signed-intent parsing, file PUT/completion behavior, missing backend configuration, and transient/permanent failure handling.
+- Added library ViewModel coverage for repository-backed OCR search and manual upload queueing.
+- Added scanner ViewModel coverage for auto-capture stability and manual fallback behavior.
+- Added diagnostics repository coverage through Room insertion paths.
+- Added Room migration and OCR FTS search instrumentation coverage.
+- Added Compose state coverage for library OCR/upload status/actions and scanner auto-capture toggle/hint behavior.
+
+Validation:
+
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:compileDebugUnitTestKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:testDebugUnitTest --console=plain` completed with `BUILD SUCCESSFUL`.
+- Requested local offline gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 41m 1s`.
+- Final narrow rerun after connected-test scroll fixes: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:ktlintCheck :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL in 2m 57s`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --offline --max-workers=1 :app:assembleRelease --console=plain` first stayed in R8 for over an hour and was stopped; after adding `-dontoptimize`, the same release command completed with `BUILD SUCCESSFUL in 16m 7s`.
+- The unsigned release artifact was generated at `app/build/outputs/apk/release/app-release-unsigned.apk`; `output-metadata.json` reports `versionCode` 30 and `versionName` `0.30.0`. The release APK is about `192M`.
+- The merged release manifest intentionally includes `android.permission.CAMERA`, `android.permission.INTERNET`, `android.permission.ACCESS_NETWORK_STATE`, AndroidX WorkManager scheduler permissions (`WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), the app-local dynamic receiver permission, `allowBackup=false`, and the existing PDF `FileProvider`.
+- Initial targeted connected Phase 30 coverage on `TECNO KL5 - 14` installed and ran 25 tests, then exposed small-screen reachability assertions in scanner/library Compose tests; those assertions were updated to scroll before visibility checks.
+- The final targeted connected rerun was blocked before test execution by device storage: installing `app-debug.apk` failed with `INSTALL_FAILED_INSUFFICIENT_STORAGE`, zero tests ran, and Android cache trimming only raised available `/data` space to about `1.3G`.
+
+## 2026-05-11 - Documentation Roadmap Reset For Document Utility Product
+
+Scope:
+
+- Documentation-only reset for the broader Docly product direction defined in `/home/prometheus/Desktop/Docly.txt`.
+- Replaced the active scanner-only planning docs with a local-first document utility roadmap.
+- Updated `Implementation Roadmap.md`, `Technical Architecture.md`, `Low-Level Design (LLD).md`, `Build Roadmap.md`, `Privacy Notes.md`, and `Release Checklist.md`.
+- No app code, Gradle configuration, manifest entries, schemas, tests, or generated files were changed as part of this documentation reset.
+
+Product decisions recorded:
+
+- Docly is now documented as a scanner, reader, creator, editor, converter, and local document manager.
+- The build order is scanner, reader, creator, editor, then converter, with a unified document foundation before those product stages.
+- ML Kit Document Scanner is the preferred first scanner engine, behind a replaceable `DocumentScannerService` abstraction.
+- TXT, Markdown, and HTML are the directly editable MVP formats.
+- PDF editing is documented as page management and later annotation, not arbitrary original text/layout editing.
+- DOCX and XLSX support starts with simplified readers and later limited export; direct full Office editing is explicitly out of MVP scope.
+- MVP remains local-first with no account, cloud backup, automatic upload, server conversion, analytics, or remote diagnostics requirement.
+
+Validation:
+
+- Documentation was searched for stale scanner-only positioning and old MVP cloud/upload assumptions after the rewrite.
+- Gradle tests were not run because this change only edits Markdown documentation.
+
+## 2026-05-11 - Phase 1-2 Unified Local Document Foundation
+
+Scope:
+
+- Implemented Phase 1 as the active product baseline and Phase 2 as a fresh local Room reset instead of a scanner-era data migration.
+- Replaced scanner-only library persistence with the unified `DoclyDocument` model and document types for PDF, TXT, Markdown, HTML, image, DOCX, XLSX, CSV, and unsupported `UNKNOWN`.
+- Added file-type resolution, document capability resolution, internal document storage under `files/docly/documents/<type>/`, managed FileProvider open/share intents, and app-owned file deletion.
+- Bumped Room to schema version `4`; `MIGRATION_3_4` drops legacy document/upload/OCR tables and creates `documents`, `folders`, `recent_documents`, `conversion_jobs`, `scan_sessions`, and `scan_pages`.
+- Removed the active manual upload/network path, backend build config, OkHttp/mock upload dependencies, WorkManager upload/OCR workers, ML Kit OCR text-recognition behavior, and network permissions from the MVP path.
+- Built Home-first top-level navigation for Home, Documents, Search, Create, Tools, and Settings. Documents now owns SAF import, search, sort, filter, list/grid view, favorite, rename, delete, share, and system-open effects.
+
+Implementation decisions:
+
+- Existing `saved_documents` rows are intentionally not migrated into the new document library.
+- OCR remains a document metadata status only; OCR workers and text-recognition indexing are deferred to the later OCR phase.
+- Rename is metadata-only in Phase 2 and does not rename the internal physical file.
+- Scanner/export compatibility remains compiling, and successful scan PDF export registers a `DoclyDocument` with `DocumentSource.SCANNED`.
+- `UNKNOWN` files fail before repository insertion.
+
+Validation:
+
+- Stale-scope search was run across active docs, source, manifest, Gradle files, and README for upload/backend/network/OCR-worker/scanner-only remnants. Remaining upload/cloud references are historical implementation notes or explicit future/privacy gates; active source/build upload wording was removed.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:compileDebugKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:compileDebugUnitTestKotlin --console=plain` completed with `BUILD SUCCESSFUL`.
+- `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:compileDebugAndroidTestKotlin --console=plain` completed with `BUILD SUCCESSFUL in 8m 42s`.
+- Requested local gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 3m 41s`.
+- The regenerated debug merged, packaged, and androidTest packaged manifests do not contain `INTERNET` or `ACCESS_NETWORK_STATE`.

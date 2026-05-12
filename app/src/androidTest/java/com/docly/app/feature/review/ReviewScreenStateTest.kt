@@ -1,19 +1,27 @@
 package com.docly.app.feature.review
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PointFSerializable
 import com.docly.app.domain.model.ScanMode
@@ -40,6 +48,7 @@ class ReviewScreenStateTest {
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_CROP_TOP_RIGHT_HANDLE).assertIsDisplayed()
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_CROP_BOTTOM_RIGHT_HANDLE).assertIsDisplayed()
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_CROP_BOTTOM_LEFT_HANDLE).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Top left crop corner").assertIsDisplayed()
     }
 
     @Test
@@ -115,6 +124,48 @@ class ReviewScreenStateTest {
     }
 
     @Test
+    fun qualityWarningShowsContinueAndRescanChoicesAndDisablesAccept() {
+        val receivedEvents = mutableListOf<ReviewUiEvent>()
+
+        composeRule.setContent {
+            DoclyTheme {
+                ReviewScreen(
+                    uiState = cropUiState(
+                        processedImagePath = "/processed/page.jpg",
+                        isCropAdjustmentVisible = false,
+                        qualityWarning = ReviewQualityWarning(
+                            message = "This page may be blurry.",
+                            issues = setOf(ScanQualityIssue.BLURRY)
+                        )
+                    ),
+                    onEvent = { event -> receivedEvents += event },
+                    onEditPages = {},
+                    onNavigateBack = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_QUALITY_WARNING).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_QUALITY_CONTINUE_ACTION).performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_QUALITY_RESCAN_ACTION).performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESCAN_DIALOG).assertIsDisplayed()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESCAN_CONFIRM_ACTION).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    ReviewUiEvent.OnContinueWithLowQualityClicked,
+                    ReviewUiEvent.OnRescanClicked
+                ),
+                receivedEvents
+            )
+        }
+    }
+
+    @Test
     fun acceptIsDisabledWhenProcessedImageIsMissing() {
         renderReviewContent(
             uiState = cropUiState(
@@ -170,6 +221,7 @@ class ReviewScreenStateTest {
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESCAN_ACTION)
             .performScrollTo()
             .performClick()
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_RESCAN_CONFIRM_ACTION).performClick()
         composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
             .performScrollTo()
             .performClick()
@@ -230,6 +282,32 @@ class ReviewScreenStateTest {
         }
     }
 
+    @Test
+    fun largeFontKeepsReviewDecisionActionsReachableOnCompactWidth() {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density = density.density, fontScale = 2f)) {
+                DoclyTheme {
+                    Box(modifier = androidx.compose.ui.Modifier.width(320.dp)) {
+                        ReviewScreen(
+                            uiState = cropUiState(
+                                processedImagePath = "/processed/page.jpg",
+                                isCropAdjustmentVisible = false
+                            ),
+                            onEvent = {},
+                            onEditPages = {},
+                            onNavigateBack = {}
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.REVIEW_ACCEPT_ACTION)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun renderReviewContent(uiState: ReviewUiState) {
         composeRule.setContent {
             DoclyTheme {
@@ -250,7 +328,8 @@ class ReviewScreenStateTest {
         isProcessing: Boolean = false,
         selectedScanMode: ScanMode = ScanMode.DOCUMENT,
         appliedScanMode: ScanMode = ScanMode.DOCUMENT,
-        isCropAdjustmentVisible: Boolean = true
+        isCropAdjustmentVisible: Boolean = true,
+        qualityWarning: ReviewQualityWarning? = null
     ): ReviewUiState = ReviewUiState(
         sessionId = "session-id",
         currentPageId = "page-id",
@@ -264,7 +343,8 @@ class ReviewScreenStateTest {
         appliedCorners = editableCorners,
         editableCorners = editableCorners,
         isProcessing = isProcessing,
-        isCropAdjustmentVisible = isCropAdjustmentVisible
+        isCropAdjustmentVisible = isCropAdjustmentVisible,
+        qualityWarning = qualityWarning
     )
 
     private fun sampleCorners(): PageCorners = PageCorners(

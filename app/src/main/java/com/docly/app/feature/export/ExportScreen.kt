@@ -2,7 +2,6 @@ package com.docly.app.feature.export
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -14,8 +13,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.docly.app.app.navigation.PLACEHOLDER_SESSION_ID
+import com.docly.app.ui.components.DoclyAdaptiveTwoActionRow
+import com.docly.app.ui.components.DoclyErrorContent
 import com.docly.app.ui.components.DoclyLoadingContent
 import com.docly.app.ui.components.DoclyScreenScaffold
+import com.docly.app.ui.components.doclyMinimumTouchTarget
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 
@@ -39,6 +41,12 @@ fun ExportScreen(
         )
         when {
             uiState.isLoading -> DoclyLoadingContent(message = "Preparing export...")
+
+            uiState.hasBlockingExportError -> DoclyErrorContent(
+                title = "Export is not ready",
+                message = checkNotNull(uiState.errorMessage)
+            )
+
             else -> ExportContent(uiState = uiState, onEvent = onEvent)
         }
     }
@@ -107,6 +115,7 @@ private fun ExportPrimaryAction(uiState: ExportUiState, onEvent: (ExportUiEvent)
         modifier = Modifier
             .fillMaxWidth()
             .testTag(DoclyTestTags.EXPORT_PDF_ACTION)
+            .doclyMinimumTouchTarget()
     ) {
         Text(text = if (uiState.isExporting) "Exporting..." else "Export PDF")
     }
@@ -115,34 +124,38 @@ private fun ExportPrimaryAction(uiState: ExportUiState, onEvent: (ExportUiEvent)
 @Composable
 private fun ExportCompletedActions(onEvent: (ExportUiEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { onEvent(ExportUiEvent.OnOpenPdfClicked) },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(DoclyTestTags.EXPORT_OPEN_ACTION)
-            ) {
-                Text(text = "Open")
+        DoclyAdaptiveTwoActionRow(
+            first = { actionModifier ->
+                OutlinedButton(
+                    onClick = { onEvent(ExportUiEvent.OnOpenPdfClicked) },
+                    modifier = actionModifier.testTag(DoclyTestTags.EXPORT_OPEN_ACTION)
+                ) {
+                    Text(text = "Open")
+                }
+            },
+            second = { actionModifier ->
+                OutlinedButton(
+                    onClick = { onEvent(ExportUiEvent.OnSharePdfClicked) },
+                    modifier = actionModifier.testTag(DoclyTestTags.EXPORT_SHARE_ACTION)
+                ) {
+                    Text(text = "Share")
+                }
             }
-            OutlinedButton(
-                onClick = { onEvent(ExportUiEvent.OnSharePdfClicked) },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(DoclyTestTags.EXPORT_SHARE_ACTION)
-            ) {
-                Text(text = "Share")
-            }
-        }
+        )
         Button(
             onClick = { onEvent(ExportUiEvent.OnOpenLibraryClicked) },
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(DoclyTestTags.EXPORT_LIBRARY_ACTION)
+                .doclyMinimumTouchTarget()
         ) {
             Text(text = "View library")
         }
     }
 }
+
+private val ExportUiState.hasBlockingExportError: Boolean
+    get() = errorMessage != null && !isExportReady && !hasExportedPdf && fileName.isBlank() && pageCount == 0
 
 @Preview(showBackground = true)
 @Composable

@@ -4,9 +4,13 @@ import com.docly.app.core.common.IdProvider
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
+import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentMetadata
+import com.docly.app.domain.model.DocumentSource
+import com.docly.app.domain.model.DocumentType
+import com.docly.app.domain.model.FileRef
+import com.docly.app.domain.model.OcrStatus
 import com.docly.app.domain.model.PageReviewStatus
-import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
@@ -15,7 +19,6 @@ import com.docly.app.domain.repository.DocumentRepository
 import com.docly.app.domain.repository.FileRepository
 import com.docly.app.domain.repository.PdfRepository
 import com.docly.app.domain.repository.StorageReserveBytes
-import com.docly.app.domain.usecase.library.DeleteSavedDocumentUseCase
 import com.docly.app.domain.usecase.session.GetScanSessionUseCase
 import com.docly.app.domain.usecase.session.UpdateScanSessionStatusUseCase
 import java.io.File
@@ -89,7 +92,7 @@ class GeneratePdfUseCase @Inject constructor(
 }
 
 class SaveDocumentUseCase @Inject constructor(private val documentRepository: DocumentRepository) {
-    suspend operator fun invoke(document: SavedDocument): AppResult<Unit> = documentRepository.saveDocument(document)
+    suspend operator fun invoke(document: DoclyDocument): AppResult<Unit> = documentRepository.upsertDocument(document)
 }
 
 class PrepareExportUseCase @Inject constructor(
@@ -149,7 +152,7 @@ class ExportDocumentUseCase @Inject constructor(
     private val generatePdfUseCase: GeneratePdfUseCase,
     private val saveDocumentUseCase: SaveDocumentUseCase,
     private val updateScanSessionStatusUseCase: UpdateScanSessionStatusUseCase,
-    private val deleteSavedDocumentUseCase: DeleteSavedDocumentUseCase,
+    private val documentRepository: DocumentRepository,
     private val fileRepository: FileRepository,
     private val idProvider: IdProvider,
     private val timeProvider: TimeProvider
@@ -165,7 +168,7 @@ class ExportDocumentUseCase @Inject constructor(
             is AppResult.Success -> pdfResult.data
         }
 
-        val document = preparedExport.toSavedDocument(pdfPath = pdfPath)
+        val document = preparedExport.toDocument(pdfPath = pdfPath)
         when (val saveResult = saveDocumentUseCase(document)) {
             is AppResult.Error -> {
                 fileRepository.deleteFile(pdfPath)
@@ -182,25 +185,38 @@ class ExportDocumentUseCase @Inject constructor(
             )
         ) {
             is AppResult.Error -> {
-                deleteSavedDocumentUseCase(document.id)
+                documentRepository.deleteDocument(document.id)
                 fileRepository.deleteFile(pdfPath)
                 statusResult
             }
 
-            is AppResult.Success -> AppResult.Success(ExportDocumentResult(document = document))
+            is AppResult.Success -> {
+                AppResult.Success(ExportDocumentResult(document = document))
+            }
         }
     }
 
-    private fun PreparedExport.toSavedDocument(pdfPath: String): SavedDocument = SavedDocument(
-        id = idProvider.generateId(),
-        sessionId = session.id,
-        title = fileName.removeSuffix(PDF_EXTENSION),
-        pdfPath = pdfPath,
-        thumbnailPath = pages.firstNotNullOfOrNull { page -> page.thumbnailPath?.takeIf { it.isNotBlank() } },
-        metadata = metadata,
-        pageCount = pages.size,
-        createdAt = timeProvider.now()
-    )
+    private fun PreparedExport.toDocument(pdfPath: String): DoclyDocument {
+        val now = timeProvider.now()
+        return DoclyDocument(
+            id = idProvider.generateId(),
+            name = fileName.removeSuffix(PDF_EXTENSION),
+            type = DocumentType.PDF,
+            mimeType = "application/pdf",
+            fileRef = FileRef.InternalFile(pdfPath),
+            source = DocumentSource.SCANNED,
+            folderId = null,
+            thumbnailPath = pages.firstNotNullOfOrNull { page -> page.thumbnailPath?.takeIf { it.isNotBlank() } },
+            fileSize = File(pdfPath).length(),
+            pageCount = pages.size,
+            createdAt = now,
+            updatedAt = now,
+            lastOpenedAt = null,
+            isFavorite = false,
+            isScanned = true,
+            ocrStatus = OcrStatus.NOT_STARTED
+        )
+    }
 
     private companion object {
         const val PDF_EXTENSION = ".pdf"
@@ -214,7 +230,7 @@ data class PreparedExport(
     val fileName: String
 )
 
-data class ExportDocumentResult(val document: SavedDocument)
+data class ExportDocumentResult(val document: DoclyDocument)
 
 private fun validationError(message: String): AppResult.Error = AppResult.Error(
     message = message,

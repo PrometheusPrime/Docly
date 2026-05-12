@@ -2,6 +2,7 @@ package com.docly.app.domain.usecase.page
 
 import com.docly.app.core.camera.CameraCaptureResult
 import com.docly.app.core.common.IdProvider
+import com.docly.app.core.image.ScanQualityAssessment
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
@@ -134,6 +135,11 @@ class ProcessCapturedPageUseCase @Inject constructor(
         message = "Captured page processing is not implemented yet.",
         category = AppErrorCategory.PROCESSING
     )
+}
+
+class EvaluateScanQualityUseCase @Inject constructor(private val imageProcessingRepository: ImageProcessingRepository) {
+    suspend operator fun invoke(inputPath: String, corners: PageCorners?): AppResult<ScanQualityAssessment> =
+        imageProcessingRepository.evaluateQuality(inputPath = inputPath, corners = corners)
 }
 
 class ApplyPageCropUseCase @Inject constructor(

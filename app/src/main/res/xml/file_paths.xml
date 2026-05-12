@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path
-        android:name="docly_pdfs"
-        android:path="documents/pdf/" />
+        android:name="docly_documents"
+        android:path="docly/documents/" />
+    <files-path
+        android:name="docly_exports"
+        android:path="docly/exports/" />
 </paths>

@@ -16,8 +16,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.docly.app.app.navigation.PLACEHOLDER_SESSION_ID
+import com.docly.app.ui.components.DoclyErrorContent
 import com.docly.app.ui.components.DoclyLoadingContent
 import com.docly.app.ui.components.DoclyScreenScaffold
+import com.docly.app.ui.components.doclyMinimumTouchTarget
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 
@@ -48,6 +50,12 @@ fun MetadataScreen(
 
         when {
             uiState.isLoading -> DoclyLoadingContent(message = "Loading metadata...")
+
+            !uiState.isSessionAvailable && uiState.errorMessage != null -> DoclyErrorContent(
+                title = "Could not load document details",
+                message = uiState.errorMessage
+            )
+
             else -> MetadataForm(uiState = uiState, onEvent = onEvent)
         }
     }
@@ -61,6 +69,7 @@ private fun MetadataContinueAction(uiState: MetadataUiState, onEvent: (MetadataU
         modifier = Modifier
             .fillMaxWidth()
             .testTag(DoclyTestTags.METADATA_CONTINUE_ACTION)
+            .doclyMinimumTouchTarget()
     ) {
         Text(text = if (uiState.isSaving) "Saving..." else "Continue to export")
     }

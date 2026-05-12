@@ -119,6 +119,22 @@ class MetadataScreenStateTest {
             .assertIsNotEnabled()
     }
 
+    @Test
+    fun unavailableSessionShowsBlockingErrorState() {
+        renderMetadata(
+            uiState = MetadataUiState(
+                sessionId = SESSION_ID,
+                isSessionAvailable = false,
+                errorMessage = "Scan session not found."
+            )
+        )
+
+        composeRule.onNodeWithTag(DoclyTestTags.ERROR_CONTENT)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Could not load document details")
+            .assertIsDisplayed()
+    }
+
     private fun renderMetadata(
         uiState: MetadataUiState = MetadataUiState(sessionId = SESSION_ID),
         onEvent: (MetadataUiEvent) -> Unit = {}

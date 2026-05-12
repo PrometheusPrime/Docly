@@ -32,10 +32,13 @@ class AndroidThumbnailGenerator @Inject constructor(
         }
 
         var thumbnailBitmap: Bitmap? = null
+        var shouldRecycleDecodedBitmap = true
         return try {
             thumbnailBitmap = withContext(dispatcherProvider.default) {
                 decodedBitmap.toThumbnailBitmap()
             }
+            decodedBitmap.recycle()
+            shouldRecycleDecodedBitmap = false
             withContext(dispatcherProvider.io) {
                 val outputFile = File(outputPath)
                 outputFile.parentFile?.mkdirs()
@@ -56,7 +59,9 @@ class AndroidThumbnailGenerator @Inject constructor(
             )
         } finally {
             thumbnailBitmap?.recycle()
-            decodedBitmap.recycle()
+            if (shouldRecycleDecodedBitmap) {
+                decodedBitmap.recycle()
+            }
         }
     }
 

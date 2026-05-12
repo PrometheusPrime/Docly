@@ -3,10 +3,14 @@ package com.docly.app.feature.scanner
 import androidx.lifecycle.SavedStateHandle
 import com.docly.app.core.camera.CameraCaptureResult
 import com.docly.app.core.camera.PreviewDocumentBoundary
+import com.docly.app.core.camera.PreviewFrameAnalysis
 import com.docly.app.core.common.IdProvider
+import com.docly.app.core.image.ScanQualityAssessment
+import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
+import com.docly.app.core.testing.NoOpDiagnosticsRepository
 import com.docly.app.core.time.TimeProvider
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.ImportedRawImage
@@ -114,14 +118,107 @@ class ScannerViewModelTest {
     }
 
     @Test
+    fun previewFrameAnalysisUpdatesBoundaryCornersAndQualityHint() {
+        val viewModel = viewModel()
+        val previewBoundary = samplePreviewBoundary()
+
+        viewModel.onEvent(
+            ScannerUiEvent.OnPreviewFrameAnalysisChanged(
+                PreviewFrameAnalysis(
+                    boundary = previewBoundary,
+                    quality = qualityWith(ScanQualityIssue.DOCUMENT_TOO_SMALL)
+                )
+            )
+        )
+
+        assertEquals(previewBoundary, viewModel.uiState.value.previewBoundary)
+        assertEquals(previewBoundary.corners, viewModel.uiState.value.detectedCorners)
+        assertEquals("Move closer", viewModel.uiState.value.qualityHint)
+    }
+
+    @Test
+    fun previewQualityHintUsesIssuePriority() {
+        val viewModel = viewModel()
+
+        viewModel.onEvent(
+            ScannerUiEvent.OnPreviewFrameAnalysisChanged(
+                PreviewFrameAnalysis(
+                    boundary = null,
+                    quality = qualityWith(ScanQualityIssue.DOCUMENT_NOT_DETECTED, ScanQualityIssue.BLURRY)
+                )
+            )
+        )
+        assertEquals("Document not detected", viewModel.uiState.value.qualityHint)
+
+        viewModel.onEvent(
+            ScannerUiEvent.OnPreviewFrameAnalysisChanged(
+                PreviewFrameAnalysis(
+                    boundary = samplePreviewBoundary(),
+                    quality = qualityWith(ScanQualityIssue.TOO_DARK)
+                )
+            )
+        )
+        assertEquals("Improve lighting", viewModel.uiState.value.qualityHint)
+
+        viewModel.onEvent(
+            ScannerUiEvent.OnPreviewFrameAnalysisChanged(
+                PreviewFrameAnalysis(boundary = samplePreviewBoundary(), quality = qualityWith(ScanQualityIssue.BLURRY))
+            )
+        )
+        assertEquals("Hold steady", viewModel.uiState.value.qualityHint)
+    }
+
+    @Test
+    fun autoCaptureRequestsCaptureAfterStableGoodFrames() {
+        val viewModel = viewModel()
+        val analysis = PreviewFrameAnalysis(boundary = samplePreviewBoundary(), quality = qualityWith())
+
+        viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        viewModel.onEvent(ScannerUiEvent.OnAutoCaptureEnabledChanged(true))
+
+        repeat(3) {
+            viewModel.onEvent(ScannerUiEvent.OnPreviewFrameAnalysisChanged(analysis))
+        }
+
+        assertEquals(1L, viewModel.uiState.value.autoCaptureRequestId)
+        assertEquals("Auto-capturing...", viewModel.uiState.value.autoCaptureHint)
+    }
+
+    @Test
+    fun autoCaptureDoesNotRequestCaptureWhenQualityIsPoor() {
+        val viewModel = viewModel()
+
+        viewModel.onEvent(ScannerUiEvent.OnPermissionResult(CameraPermissionStatus.Granted))
+        viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
+        viewModel.onEvent(ScannerUiEvent.OnAutoCaptureEnabledChanged(true))
+        viewModel.onEvent(
+            ScannerUiEvent.OnPreviewFrameAnalysisChanged(
+                PreviewFrameAnalysis(boundary = samplePreviewBoundary(), quality = qualityWith(ScanQualityIssue.BLURRY))
+            )
+        )
+
+        assertEquals(0L, viewModel.uiState.value.autoCaptureRequestId)
+        assertEquals("Auto capture: hold steady", viewModel.uiState.value.autoCaptureHint)
+    }
+
+    @Test
     fun cameraNotReadyClearsPreviewBoundary() {
         val viewModel = viewModel()
 
         viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(true))
-        viewModel.onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(samplePreviewBoundary()))
+        viewModel.onEvent(
+            ScannerUiEvent.OnPreviewFrameAnalysisChanged(
+                PreviewFrameAnalysis(
+                    boundary = samplePreviewBoundary(),
+                    quality = qualityWith(ScanQualityIssue.BLURRY)
+                )
+            )
+        )
         viewModel.onEvent(ScannerUiEvent.OnCameraReadyChanged(false))
 
         assertNull(viewModel.uiState.value.previewBoundary)
+        assertNull(viewModel.uiState.value.qualityHint)
     }
 
     @Test
@@ -510,7 +607,10 @@ class ScannerViewModelTest {
         importDevicePhotosUseCase = importDevicePhotosUseCase,
         getRecoverableSessionUseCase = getRecoverableSessionUseCase,
         abandonScanSessionUseCase = abandonScanSessionUseCase,
-        cleanOrphanedFilesUseCase = cleanOrphanedFilesUseCase
+        cleanOrphanedFilesUseCase = cleanOrphanedFilesUseCase,
+        diagnosticsRepository = NoOpDiagnosticsRepository(),
+        idProvider = SequenceIdProvider(listOf("diagnostic-1", "diagnostic-2", "diagnostic-3")),
+        timeProvider = FixedTimeProvider(1L)
     )
 
     private fun captureUseCase(
@@ -553,6 +653,9 @@ class ScannerViewModelTest {
         imageWidth = 100,
         imageHeight = 200
     )
+
+    private fun qualityWith(vararg issues: ScanQualityIssue): ScanQualityAssessment =
+        ScanQualityAssessment.good().copy(issues = issues.toSet())
 
     private suspend fun TestScope.resumeEffectFor(session: ScanSession): ScannerUiEffect {
         val scanRepository = FakeScanRepository(recoverableSession = session)

@@ -1,797 +1,383 @@
 # Build Roadmap
 
-## Docly
+## 1. Goal
 
-This is the **implementation roadmap** for building the app.
+Build Docly as a local-first Android document utility in this order:
 
----
+1. Scanner
+2. Reader
+3. Creator
+4. Editor
+5. Converter
 
-# 1. MVP Goal
+Every implementation block must leave the app buildable, runnable, and honest about supported capabilities.
 
-Build an **internal scanning tool** that can:
+## 2. Delivery Milestones
 
-* capture pages
-* detect document edges
-* correct perspective
-* enhance readability
-* manage multiple pages
-* export to PDF
-* save locally with metadata
+### Milestone A - Document Foundation
 
-This roadmap is optimized for **incremental delivery**. Each phase should leave the app in a runnable state.
+Goal:
 
----
-
-# 2. Target MVP Deliverables
-
-By the end of the MVP, you should have:
-
-* Scanner screen
-* Page review screen
-* Document editor screen
-* Metadata screen
-* Export-to-PDF flow
-* Local scan library
-* Offline local storage
-
----
-
-# 3. Recommended Stack
-
-## Core
-
-* **Kotlin**
-* **Jetpack Compose**
-* **CameraX**
-* **Room**
-* **Coroutines + Flow**
-* **WorkManager** later
-* **OpenCV Android**
-
-## Helpful libraries
-
-* **Hilt** for DI
-* **Coil** for image previews
-* `androidx.documentfile` if export targets shared storage later
-
----
-
-# 4. Development Phases
-
----
-
-## Phase 0 — Project Foundation
-
-### Objective
-
-Set up the project skeleton and core architecture.
-
-### Tasks
-
-* Create Android project
-* Set min SDK
-* Set up Compose
-* Add module/package structure
-* Add Hilt
-* Add Room
-* Add Coil
-* Add CameraX dependencies
-* Add OpenCV integration
-* Set up navigation
-* Create theme and design tokens
-* Set up basic logging
-* Create base `Result` wrapper
-* Create folder/file manager utility
-
-### Output
-
-A clean app shell with navigation and architecture ready.
-
-### Definition of done
-
-* App launches
-* Navigation works between placeholder screens
-* DI works
-* Room initializes
-* OpenCV loads successfully
-
----
-
-## Phase 1 — Domain and Data Foundations
-
-### Objective
-
-Build the core models and persistence layer before the scanner UI becomes complex.
-
-### Tasks
-
-Create domain models:
-
-* `ScanSession`
-* `ScannedPage`
-* `DocumentMetadata`
-* `SavedDocument`
-
-Create Room entities:
-
-* `ScanSessionEntity`
-* `ScannedPageEntity`
-* `SavedDocumentEntity`
-
-Create DAOs:
-
-* `ScanSessionDao`
-* `ScannedPageDao`
-* `SavedDocumentDao`
-
-Create repositories:
-
-* `ScanRepository`
-* `DocumentRepository`
-* `PdfRepository`
-
-Create file storage service:
-
-* save raw image
-* save processed image
-* save thumbnail
-* save PDF
-* delete session files
-
-### Output
-
-Working persistence and file-management layer.
-
-### Definition of done
-
-* Can create a scan session
-* Can save mock pages to DB/files
-* Can read them back
-* Can delete them safely
-
----
-
-## Phase 2 — Scanner Screen v1 (Manual Capture Only)
-
-### Objective
-
-Get a live camera preview and manual page capture working first.
-
-### Tasks
-
-Build:
-
-* `ScannerScreen`
-* `ScannerViewModel`
-* camera permission flow
-* CameraX preview
-* manual shutter button
-* flash toggle
-* mode selector UI placeholder
-* capture image to temp file
-
-Do **not** add edge detection yet if it slows progress.
-First get reliable capture working.
-
-### Output
-
-User can open scanner and capture a page manually.
-
-### Definition of done
-
-* Camera preview is stable
-* Manual capture saves image file
-* Captured file can be previewed
-* No crash on permission denial path
-
----
-
-## Phase 3 — Document Detection and Perspective Correction
-
-### Objective
-
-Turn raw photos into document-like scans.
-
-### Tasks
-
-Implement image-processing pipeline:
-
-* decode bitmap efficiently
-* convert to OpenCV `Mat`
-* grayscale
-* blur
-* Canny edge detection
-* contour detection
-* largest quadrilateral detection
-* corner ordering
-* perspective warp
-
-Create:
-
-* `DocumentDetector`
-* `PerspectiveTransformer`
-* `CornerOrderingUtil`
-
-Add overlay on preview:
-
-* draw detected document contour
-* indicate success/failure
-
-Fallback:
-
-* if no document detected, still allow manual crop later
-
-### Output
-
-Captured images can be auto-cropped and flattened.
-
-### Definition of done
-
-* Most pages under decent lighting detect correctly
-* Warped output looks like a flat page
-* Failures fall back gracefully
-
----
-
-## Phase 4 — Page Review Screen
-
-### Objective
-
-Let the user confirm or reject each scanned page.
-
-### Tasks
-
-Build:
-
-* `PageReviewScreen`
-* processed image preview
-* original vs processed toggle
-* rotate page
-* rescan page
-* accept page
-* manual crop adjustment UI
-
-Manual crop adjustment can start simple:
-
-* draggable 4-corner overlay
-* re-run perspective correction on confirm
-
-### Output
-
-Every captured page goes through a review step before entering the document.
-
-### Definition of done
-
-* User can accept processed page
-* User can rotate it
-* User can manually fix crop
-* User can rescan
-
----
-
-## Phase 5 — Enhancement Modes
-
-### Objective
-
-Improve readability and support different page types.
-
-### Tasks
-
-Implement 3 processing modes:
-
-### Document mode
-
-* grayscale
-* adaptive threshold
-* denoise
-* sharpen
-
-### Mixed mode
-
-* mild contrast
-* line preservation
-* lighter denoise
-
-### Color mode
-
-* preserve original colors
-* mild cleanup
-
-Create:
-
-* `ImageEnhancer`
-* `ScanModeProcessor`
-
-Add UI:
-
-* mode selector
-* live mode choice before processing
-* reprocess page after mode change
-
-### Output
-
-Pages can be processed appropriately for text, diagrams, or colored content.
-
-### Definition of done
-
-* Output quality changes visibly by mode
-* Diagrams are preserved better in mixed mode
-* Text-heavy pages look clean in document mode
-
----
-
-## Phase 6 — Multi-Page Session Management
-
-### Objective
-
-Support real documents, not just single-page capture.
-
-### Tasks
-
-Build:
-
-* session page list
-* thumbnail strip/grid
-* add another page
-* reorder pages
-* delete page
-* rotate saved page
-* re-open page review
-
-Create:
-
-* `DocumentEditorScreen`
-* `ReorderPagesUseCase`
-* `DeletePageUseCase`
-* `RotatePageUseCase`
-
-For reorder:
-
-* use drag-and-drop if practical
-* otherwise provide move up/down for first version
-
-### Output
-
-A scan session can contain multiple ordered pages.
-
-### Definition of done
-
-* User can build a multi-page paper
-* Page order persists
-* Pages can be deleted/reordered reliably
-
----
-
-## Phase 7 — Metadata Screen
-
-### Objective
-
-Attach educational structure to the scanned paper.
-
-### Tasks
-
-Build:
-
-* `MetadataScreen`
-* grade dropdown
-* subject dropdown
-* year input
-* paper type dropdown
-* optional paper number
-* source/notes optional
-* filename preview
-
-Validation:
-
-* required fields must be completed before export
-
-Create:
-
-* `ValidateMetadataUseCase`
-* `GenerateDocumentNameUseCase`
-
-### Output
-
-Each scan session can be classified for Amasambililo ingestion.
-
-### Definition of done
-
-* Metadata is saved locally
-* Validation blocks incomplete export
-* Filename generation is consistent
-
----
-
-## Phase 8 — PDF Export
-
-### Objective
-
-Generate the final usable document.
-
-### Tasks
-
-Build PDF pipeline:
-
-* fetch ordered processed pages
-* render pages into PDF
-* compress reasonably
-* save to app storage
-* generate thumbnail
-* persist `SavedDocument`
-
-Create:
-
-* `GeneratePdfUseCase`
-* `SaveDocumentUseCase`
-
-Add export screen:
-
-* export button
-* progress state
-* success/failure result
-* open/share action
-
-### Output
-
-User can export a full scan session into a PDF.
-
-### Definition of done
-
-* PDF is readable
-* page order matches editor
-* exported file opens correctly
-* metadata record is saved
-
----
-
-## Phase 9 — Local Library
-
-### Objective
-
-Allow browsing and reusing previously scanned documents.
-
-### Tasks
-
-Build:
-
-* `LibraryScreen`
-* list saved PDFs
-* thumbnail + metadata display
-* open details
-* delete
-* share/export again
-* basic search/filter by subject/year
-
-Create:
-
-* `GetSavedDocumentsUseCase`
-* `DeleteDocumentUseCase`
-
-### Output
-
-The app has a persistent local archive.
-
-### Definition of done
-
-* Saved documents appear in library
-* Documents can be opened and deleted
-* Metadata is visible and filterable
-
----
-
-## Phase 10 — Quality Checks and Hardening
-
-### Objective
-
-Make the scanner dependable.
-
-### Tasks
-
-Add pre/post capture checks:
-
-* blur score
-* brightness score
-* overexposure score
-* document area score
-
-Add user guidance:
-
-* “Move closer”
-* “Lighting too low”
-* “Hold steady”
-* “Document not detected”
-
-Add safeguards:
-
-* autosave in-progress session
-* recover unfinished scan session
-* storage space check
-* large image memory protections
-* crash-safe file cleanup
-
-### Output
-
-A scanner that behaves predictably in real-world conditions.
-
-### Definition of done
-
-* Common bad scans are flagged
-* App recovers from interruptions
-* Low-memory crashes are reduced
-
----
-
-# 5. Suggested Build Order Inside Android Studio
-
-Use this exact order to reduce churn:
-
-## Step 1
-
-Project shell, navigation, dependencies
-
-## Step 2
-
-Room entities, DAOs, repositories, file storage
-
-## Step 3
-
-Camera preview + manual image capture
-
-## Step 4
-
-Image-processing pipeline with OpenCV
-
-## Step 5
-
-Page review flow
-
-## Step 6
-
-Enhancement modes
-
-## Step 7
-
-Multi-page editor
-
-## Step 8
-
-Metadata form
-
-## Step 9
-
-PDF generation
-
-## Step 10
-
-Library and hardening
-
-That sequence is correct because it avoids building complex UI before the capture pipeline works.
-
----
-
-# 6. Milestones
-
-## Milestone A — Capture Prototype
+- A unified document library exists before feature-specific workflows expand.
 
 Includes:
 
-* camera preview
-* manual capture
-* temp file save
+- `DoclyDocument` model.
+- Document metadata Room tables.
+- Internal file storage.
+- SAF import.
+- File type detection.
+- Capability resolver.
+- Documents screen.
+- Open/share/rename/delete/sort/filter.
 
-### Goal
+Acceptance:
 
-Prove scanning is technically viable on your target phone.
+- A user can import PDF, TXT, Markdown, HTML, images, DOCX, and XLSX.
+- The library identifies each type and shows only supported actions.
 
----
+### Milestone B - Scanner MVP
 
-## Milestone B — Processing Prototype
+Goal:
 
-Includes:
-
-* document detection
-* perspective correction
-* processed output preview
-
-### Goal
-
-Prove page quality is good enough for past papers.
-
----
-
-## Milestone C — End-to-End Single Page
+- A user can scan paper documents and save high-quality PDF/images.
 
 Includes:
 
-* capture
-* process
-* review
-* export one-page PDF
+- ML Kit Document Scanner integration.
+- Scan session/page persistence.
+- Scan review screen.
+- Reorder, rotate, delete, add page.
+- PDF/image export.
+- Output registration in Documents.
 
-### Goal
+Acceptance:
 
-Prove full workflow works.
+- A multi-page scan becomes a readable PDF in the document library.
+- Camera permission is requested only when scanning.
 
----
+### Milestone C - Reader MVP
 
-## Milestone D — Multi-Page MVP
+Goal:
+
+- A user can open all required document formats with appropriate fidelity messaging.
 
 Includes:
 
-* multiple pages
-* reorder/delete
-* metadata
-* final PDF
-* local library
+- PDF reader.
+- TXT reader.
+- Markdown reader.
+- HTML reader.
+- Simplified DOCX reader.
+- Simplified XLSX table reader.
 
-### Goal
+Acceptance:
 
-Reach MVP-complete state.
+- PDF, TXT, Markdown, HTML, DOCX, and XLSX files open from Documents.
+- DOCX/XLSX readers clearly state simplified rendering limitations.
 
----
+### Milestone D - Creator MVP
 
-# 7. Suggested Sprint Breakdown
+Goal:
 
-## Sprint 1
+- A user can create useful documents without leaving Docly.
 
-* Phase 0
-* Phase 1
-* Phase 2
+Includes:
 
-## Sprint 2
+- Create screen.
+- TXT creation.
+- Markdown creation.
+- HTML creation.
+- PDF creation from scans/images.
+- PDF creation from TXT, Markdown, and HTML.
 
-* Phase 3
-* Phase 4
+Acceptance:
 
-## Sprint 3
+- Created documents appear in Documents and open in the right editor or reader.
 
-* Phase 5
-* Phase 6
+### Milestone E - Editor MVP
 
-## Sprint 4
+Goal:
 
-* Phase 7
-* Phase 8
+- A user can safely edit the formats Docly owns.
 
-## Sprint 5
+Includes:
 
-* Phase 9
-* Phase 10
+- TXT editor.
+- Markdown editor with preview.
+- HTML source editor with preview.
+- Autosave.
+- Manual save.
+- Scan-source PDF page management.
 
-If working alone, these are not necessarily one-week sprints. Treat them as implementation blocks.
+Acceptance:
 
----
+- Edits survive close/reopen.
+- PDF page changes are implemented by regenerating Docly-created scan PDFs, not by pretending to edit arbitrary PDF text.
 
-# 8. Technical Risks by Phase
+### Milestone F - Converter MVP
 
-## Phase 2 risk
+Goal:
 
-CameraX lifecycle issues
+- A user can export practical supported formats through a clear converter flow.
 
-### Mitigation
+Includes:
 
-* isolate camera controller
-* test on real device early
+- Converter screen.
+- Type detection.
+- Supported output filtering.
+- TXT, Markdown, HTML, and image conversion engines.
+- Conversion job status.
+- Output registration, open, and share.
 
----
+Acceptance:
 
-## Phase 3 risk
+- Unsupported conversion pairs are not offered.
+- Successful outputs appear in Documents.
 
-Document detection may fail on poor lighting or low contrast pages
+### Milestone G - Product Hardening
 
-### Mitigation
+Goal:
 
-* keep manual crop fallback
-* test with real exam pages early
+- The MVP is reliable enough for internal and public testing.
 
----
+Includes:
 
-## Phase 5 risk
+- Settings.
+- Accessibility.
+- Large-file handling.
+- Low-storage handling.
+- Release manifest review.
+- Privacy checklist.
+- Device smoke testing.
 
-Aggressive enhancement may damage diagrams
+Acceptance:
 
-### Mitigation
+- Release build passes the documented gate and smoke test.
 
-* use separate scan modes
-* compare original vs processed preview
+## 3. Implementation Blocks
 
----
+### Block 01 - Product Reset And Architecture Alignment
 
-## Phase 8 risk
+Tasks:
 
-Large PDFs may become too heavy
+- Update active docs.
+- Align roadmap, architecture, LLD, privacy, and release checklist.
+- Preserve implementation notes as history.
 
-### Mitigation
+Done when:
 
-* use controlled JPEG compression
-* cap image resolution sensibly
+- No active `/docs` file describes Docly as scanner-only.
 
----
+Tests:
 
-## Phase 10 risk
+- Documentation search for stale scope and false feature promises.
 
-Memory pressure on low-end devices
+### Block 02 - Unified Document Data Layer
 
-### Mitigation
+Tasks:
 
-* avoid loading full-size bitmaps into UI
-* process off main thread
-* use thumbnails in editor/library
+- Add document, folder, recent, scan, OCR, and conversion job entities.
+- Add DAOs, mappers, and migrations.
+- Add file storage manager.
+- Add file type resolver.
+- Add capability resolver.
 
----
+Done when:
 
-# 9. What to Postpone
+- Imported files become `DoclyDocument` records.
 
-To keep delivery tight, postpone these until after MVP:
+Tests:
 
-* OCR
-* anti-glare multi-frame fusion
-* backend upload
-* cloud sync
-* auto-capture
-* AI subject/year detection
-* public upload workflows
+- Room, mapper, file resolver, and capability unit tests.
 
-These are valuable, but they are not MVP-critical.
+### Block 03 - Documents And Navigation Shell
 
----
+Tasks:
 
+- Build Home, Documents, Create, Tools, Settings navigation.
+- Add Documents list/grid, search, sort, filter, action menu.
+- Add import, open, share, rename, delete.
 
+Done when:
 
----
+- Users can manage imported files from one library.
 
-# 11. Recommended First Three  Tasks
+Tests:
 
-## Task 1
+- Compose tests for empty, populated, search, filter, and destructive actions.
 
-Set up project foundation:
+### Block 04 - Scanner
 
-* package structure
-* Hilt
-* Navigation
-* Room
-* base result wrapper
+Tasks:
 
-## Task 2
+- Add `DocumentScannerService`.
+- Implement ML Kit scanner service.
+- Persist scan sessions and pages.
+- Build scan review.
+- Export scan to PDF/images.
 
-Implement CameraX scanner screen with manual capture and image file save
+Done when:
 
-## Task 3
+- A scanned PDF appears in Documents and opens.
 
-Implement OpenCV document detection + perspective correction pipeline for a captured image
+Tests:
 
-Those three tasks establish the technical core.
+- Service fake tests, scan page operation tests, PDF export integration tests, real-device scan smoke test.
 
----
+### Block 05 - Readers
 
-# 12. Completion Criteria for MVP
+Tasks:
 
-The MVP is done when an internal user can:
+- Build open resolver.
+- Implement PDF, TXT, Markdown, HTML readers.
+- Add simplified DOCX and XLSX readers.
+- Add simplified-mode banners.
 
-1. open scanner
-2. capture all pages of a past paper
-3. review and fix pages
-4. reorder pages
-5. enter metadata
-6. export a readable PDF
-7. find that PDF later in the local library
+Done when:
 
-If that works reliably, the MVP is successful.
+- Required formats open without crashing and large PDFs render lazily.
 
----
+Tests:
 
-# 13. Strong Recommendation
+- Reader resolver tests, parser tests, screen state tests, manual fixture files.
 
-Start with:
+### Block 06 - Creators
 
-## **manual capture + strong review tools**
+Tasks:
 
-not auto-capture.
+- Build Create screen.
+- Add default content factory.
+- Create TXT, Markdown, and HTML files.
+- Create PDFs from scans/images/text/Markdown/HTML.
 
-Why:
+Done when:
 
-* simpler
-* more controllable
-* easier to debug
-* faster to ship
+- Created documents are registered and immediately usable.
 
+Tests:
+
+- Create use-case tests and PDF generation integration tests.
+
+### Block 07 - Editors
+
+Tasks:
+
+- Add shared editor state and autosave controller.
+- Implement TXT editor.
+- Implement Markdown editor and preview.
+- Implement HTML source editor and preview.
+- Add scan-source PDF page management.
+
+Done when:
+
+- Supported edits persist safely and exported results match the latest saved content.
+
+Tests:
+
+- Autosave unit tests, editor ViewModel tests, Compose editor flow tests.
+
+### Block 08 - Converter
+
+Tasks:
+
+- Add conversion model and registry.
+- Add conversion job persistence.
+- Build Converter screen.
+- Implement MVP conversion engines.
+
+Done when:
+
+- Only supported conversions are shown and outputs become library documents.
+
+Tests:
+
+- Converter registry tests, per-engine tests, conversion job integration tests.
+
+### Block 09 - Settings And Defaults
+
+Tasks:
+
+- Add DataStore settings.
+- Add appearance, scanner, reader, export, and storage settings.
+- Apply default settings through use cases.
+
+Done when:
+
+- Settings persist and affect new workflows predictably.
+
+Tests:
+
+- Settings repository tests and UI state tests.
+
+### Block 10 - Hardening And Release
+
+Tasks:
+
+- Add accessibility labels and large-text support.
+- Improve performance for large documents.
+- Review permissions and backup rules.
+- Run release checklist.
+
+Done when:
+
+- Release build and smoke tests pass.
+
+Tests:
+
+- Local Gradle gate, connected UI tests, physical device smoke test.
+
+## 4. First Three Engineering Tasks
+
+Task 1:
+
+- Implement the unified document model, Room tables, storage manager, file type resolver, and capability resolver.
+
+Task 2:
+
+- Build the Documents screen and SAF import path so imported files appear in the library.
+
+Task 3:
+
+- Replace scanner-only entry with the ML Kit scanner service flow that saves scan outputs as library documents.
+
+## 5. Technical Risks
+
+PDF rendering risk:
+
+- Large PDFs may exhaust memory.
+- Mitigation: lazy render visible pages, limit bitmap cache, and test with large fixtures.
+
+DOCX/XLSX fidelity risk:
+
+- Office files can contain complex layout and formulas.
+- Mitigation: simplified reader first, explicit messaging, no early direct editing.
+
+Conversion quality risk:
+
+- Some conversions cannot preserve formatting perfectly.
+- Mitigation: supported-pair matrix, simplified wording, fixture-based tests.
+
+Scanner dependency risk:
+
+- ML Kit scanner relies on Google Play services.
+- Mitigation: keep scanner interface replaceable and retain future CameraX/OpenCV fallback option.
+
+Large-file risk:
+
+- Images, PDFs, DOCX, and XLSX can be large.
+- Mitigation: streaming, thumbnails, background work, paging, and low-storage checks.
+
+## 6. Completion Criteria For MVP
+
+The MVP is complete when a user can:
+
+1. Import and manage documents in a local library.
+2. Scan multi-page paper documents.
+3. Save scans as PDF or images.
+4. Open PDF, TXT, Markdown, HTML, simplified DOCX, and simplified XLSX.
+5. Create TXT, Markdown, HTML, and PDFs from scans/images/text content.
+6. Edit TXT, Markdown, and HTML.
+7. Convert supported TXT, Markdown, HTML, and image inputs.
+8. Share or export output documents.
+9. Use the full MVP offline.

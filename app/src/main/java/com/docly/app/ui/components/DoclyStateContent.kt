@@ -13,6 +13,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.docly.app.ui.util.DoclyTestTags
@@ -23,6 +27,10 @@ fun DoclyLoadingContent(message: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .testTag(DoclyTestTags.LOADING_CONTENT)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = "Loading. $message"
+            }
             .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -48,6 +56,10 @@ fun DoclyErrorContent(
         modifier = modifier
             .fillMaxWidth()
             .testTag(DoclyTestTags.ERROR_CONTENT)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = "$title. $message"
+            }
             .padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -63,7 +75,10 @@ fun DoclyErrorContent(
             color = MaterialTheme.colorScheme.onBackground
         )
         if (actionLabel != null && onAction != null) {
-            OutlinedButton(onClick = onAction) {
+            OutlinedButton(
+                onClick = onAction,
+                modifier = Modifier.doclyMinimumTouchTarget()
+            ) {
                 Text(text = actionLabel)
             }
         }
@@ -82,6 +97,9 @@ fun DoclyEmptyContent(
         modifier = modifier
             .fillMaxWidth()
             .testTag(DoclyTestTags.EMPTY_CONTENT)
+            .semantics {
+                contentDescription = "$title. $message"
+            }
             .padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -97,7 +115,10 @@ fun DoclyEmptyContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (actionLabel != null && onAction != null) {
-            Button(onClick = onAction) {
+            Button(
+                onClick = onAction,
+                modifier = Modifier.doclyMinimumTouchTarget()
+            ) {
                 Text(text = actionLabel)
             }
         }

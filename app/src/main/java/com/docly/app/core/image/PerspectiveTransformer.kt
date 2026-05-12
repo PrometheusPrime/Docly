@@ -57,6 +57,7 @@ class OpenCvPerspectiveTransformer @Inject constructor(
         }
 
         var warpedBitmap: Bitmap? = null
+        var shouldRecycleDecodedBitmap = true
         return try {
             val preparedWarp = withContext(dispatcherProvider.default) {
                 val orderedCorners = CornerOrderingUtil.orderCorners(
@@ -82,6 +83,8 @@ class OpenCvPerspectiveTransformer @Inject constructor(
                     height = targetDimensions.height
                 )
             }
+            decodedBitmap.recycle()
+            shouldRecycleDecodedBitmap = false
 
             withContext(dispatcherProvider.io) {
                 preparedWarp.bitmap.writeJpeg(outputPath)
@@ -103,7 +106,9 @@ class OpenCvPerspectiveTransformer @Inject constructor(
             )
         } finally {
             warpedBitmap?.recycle()
-            decodedBitmap.recycle()
+            if (shouldRecycleDecodedBitmap) {
+                decodedBitmap.recycle()
+            }
         }
     }
 

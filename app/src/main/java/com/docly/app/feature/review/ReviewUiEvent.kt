@@ -13,6 +13,7 @@ sealed interface ReviewUiEvent {
     data object OnToggleCropEditorClicked : ReviewUiEvent
     data object OnRotateClicked : ReviewUiEvent
     data object OnAcceptClicked : ReviewUiEvent
+    data object OnContinueWithLowQualityClicked : ReviewUiEvent
     data object OnRescanClicked : ReviewUiEvent
     data object OnToggleOriginalClicked : ReviewUiEvent
 }

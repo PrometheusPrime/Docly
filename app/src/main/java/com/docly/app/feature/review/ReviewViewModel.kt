@@ -3,14 +3,18 @@ package com.docly.app.feature.review
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docly.app.core.image.ScanQualityAssessment
+import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.toUserMessage
+import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScannedPage
 import com.docly.app.domain.usecase.page.AcceptReviewedPageUseCase
 import com.docly.app.domain.usecase.page.ApplyPageCropUseCase
 import com.docly.app.domain.usecase.page.DeletePageUseCase
+import com.docly.app.domain.usecase.page.EvaluateScanQualityUseCase
 import com.docly.app.domain.usecase.page.RotatePageUseCase
 import com.docly.app.domain.usecase.session.GetScanSessionUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +33,7 @@ class ReviewViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getScanSessionUseCase: GetScanSessionUseCase,
     private val applyPageCropUseCase: ApplyPageCropUseCase,
+    private val evaluateScanQualityUseCase: EvaluateScanQualityUseCase,
     private val acceptReviewedPageUseCase: AcceptReviewedPageUseCase,
     private val deletePageUseCase: DeletePageUseCase,
     private val rotatePageUseCase: RotatePageUseCase
@@ -55,8 +60,11 @@ class ReviewViewModel @Inject constructor(
                 state.copy(selectedScanMode = event.scanMode, errorMessage = null)
             }
 
-            is ReviewUiEvent.OnCornersChanged -> _uiState.update { state ->
-                state.copy(editableCorners = event.corners, errorMessage = null)
+            is ReviewUiEvent.OnCornersChanged -> {
+                _uiState.update { state ->
+                    state.copy(editableCorners = event.corners, errorMessage = null)
+                }
+                evaluateCurrentPageQuality(corners = event.corners)
             }
 
             ReviewUiEvent.OnResetToDetectedClicked -> resetToDetectedCorners()
@@ -70,6 +78,8 @@ class ReviewViewModel @Inject constructor(
             ReviewUiEvent.OnRotateClicked -> rotatePage()
 
             ReviewUiEvent.OnAcceptClicked -> acceptPage()
+
+            ReviewUiEvent.OnContinueWithLowQualityClicked -> continueWithLowQuality()
 
             ReviewUiEvent.OnToggleOriginalClicked -> toggleOriginalPreview()
 
@@ -122,6 +132,8 @@ class ReviewViewModel @Inject constructor(
                                 reviewStatus = null,
                                 pendingPageCount = 0,
                                 acceptedPageCount = 0,
+                                qualityWarning = null,
+                                isQualityWarningAcknowledged = false,
                                 errorMessage = "Scan session not found."
                             )
                         }
@@ -136,6 +148,8 @@ class ReviewViewModel @Inject constructor(
                     )
                     if (selectedPage?.needsReviewProcessing == true) {
                         processCurrentPage(successMessage = null)
+                    } else if (selectedPage != null) {
+                        evaluatePageQuality(page = selectedPage, corners = _uiState.value.editableCorners)
                     }
                 }
             }
@@ -143,32 +157,31 @@ class ReviewViewModel @Inject constructor(
     }
 
     private fun resetToDetectedCorners() {
+        val corners = _uiState.value.detectedCorners ?: return
         _uiState.update { state ->
-            state.detectedCorners?.let { corners ->
-                state.copy(
-                    editableCorners = corners,
-                    isCropAdjustmentVisible = true,
-                    showOriginal = false,
-                    errorMessage = null
-                )
-            } ?: state
+            state.copy(
+                editableCorners = corners,
+                isCropAdjustmentVisible = true,
+                showOriginal = false,
+                errorMessage = null
+            )
         }
+        evaluateCurrentPageQuality(corners = corners)
     }
 
     private fun resetToFullImageCorners() {
+        val currentState = _uiState.value
+        val corners = fullImageCorners(imageWidth = currentState.imageWidth, imageHeight = currentState.imageHeight)
+            ?: return
         _uiState.update { state ->
-            val corners = fullImageCorners(imageWidth = state.imageWidth, imageHeight = state.imageHeight)
-            if (corners != null) {
-                state.copy(
-                    editableCorners = corners,
-                    isCropAdjustmentVisible = true,
-                    showOriginal = false,
-                    errorMessage = null
-                )
-            } else {
-                state
-            }
+            state.copy(
+                editableCorners = corners,
+                isCropAdjustmentVisible = true,
+                showOriginal = false,
+                errorMessage = null
+            )
         }
+        evaluateCurrentPageQuality(corners = corners)
     }
 
     private fun applyCrop() {
@@ -224,9 +237,12 @@ class ReviewViewModel @Inject constructor(
                         isProcessing = false,
                         showOriginal = false,
                         isCropAdjustmentVisible = false,
+                        qualityWarning = null,
+                        isQualityWarningAcknowledged = false,
                         errorMessage = null
                     )
                 }
+                evaluatePageQuality(page = result.data, corners = appliedCorners)
                 if (successMessage != null) {
                     _uiEffect.emit(ReviewUiEffect.ShowToast(successMessage))
                 }
@@ -414,6 +430,8 @@ class ReviewViewModel @Inject constructor(
                             reviewStatus = null,
                             pendingPageCount = session?.pendingPageCount ?: 0,
                             acceptedPageCount = session?.acceptedPageCount ?: 0,
+                            qualityWarning = null,
+                            isQualityWarningAcknowledged = false,
                             errorMessage = null
                         )
                     }
@@ -422,6 +440,8 @@ class ReviewViewModel @Inject constructor(
                     setPageState(session = session, page = nextPendingPage)
                     if (nextPendingPage.needsReviewProcessing) {
                         processCurrentPage(successMessage = null)
+                    } else {
+                        evaluatePageQuality(page = nextPendingPage, corners = _uiState.value.editableCorners)
                     }
                 }
             }
@@ -456,6 +476,8 @@ class ReviewViewModel @Inject constructor(
                 isSaving = false,
                 showOriginal = false,
                 isCropAdjustmentVisible = false,
+                qualityWarning = null,
+                isQualityWarningAcknowledged = false,
                 errorMessage = errorMessage
             )
         }
@@ -464,7 +486,83 @@ class ReviewViewModel @Inject constructor(
     private fun acceptBlockedMessage(state: ReviewUiState): String = when {
         state.processedImagePath.isNullOrBlank() -> "Process this page before accepting it."
         state.hasPendingScanModeChange || state.hasPendingCropChange -> "Apply pending changes before accepting."
+        state.requiresQualityAcknowledgement -> "Review the scan warning before accepting this page."
         else -> "This page cannot be accepted yet."
+    }
+
+    private fun continueWithLowQuality() {
+        _uiState.update { state ->
+            if (state.qualityWarning == null) {
+                state
+            } else {
+                state.copy(isQualityWarningAcknowledged = true, errorMessage = null)
+            }
+        }
+    }
+
+    private fun evaluateCurrentPageQuality(corners: PageCorners? = _uiState.value.editableCorners) {
+        val page = currentPage ?: return
+        viewModelScope.launch {
+            evaluatePageQuality(page = page, corners = corners)
+        }
+    }
+
+    private suspend fun evaluatePageQuality(page: ScannedPage, corners: PageCorners?) {
+        if (page.reviewStatus != PageReviewStatus.PENDING || page.originalImagePath.isBlank()) {
+            clearQualityWarning(pageId = page.id)
+            return
+        }
+
+        when (val result = evaluateScanQualityUseCase(inputPath = page.originalImagePath, corners = corners)) {
+            is AppResult.Error -> clearQualityWarning(pageId = page.id)
+
+            is AppResult.Success -> {
+                val warning = result.data.toReviewWarning()
+                _uiState.update { state ->
+                    if (state.currentPageId != page.id) {
+                        state
+                    } else {
+                        state.copy(
+                            qualityWarning = warning,
+                            isQualityWarningAcknowledged = false
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun clearQualityWarning(pageId: String) {
+        _uiState.update { state ->
+            if (state.currentPageId == pageId) {
+                state.copy(qualityWarning = null, isQualityWarningAcknowledged = false)
+            } else {
+                state
+            }
+        }
+    }
+
+    private fun ScanQualityAssessment.toReviewWarning(): ReviewQualityWarning? {
+        if (!hasWarnings) return null
+
+        val message = when {
+            ScanQualityIssue.DOCUMENT_NOT_DETECTED in issues ->
+                "Document edges were not detected. Continue only if the full image is usable."
+
+            ScanQualityIssue.DOCUMENT_TOO_SMALL in issues ->
+                "The document looks far away. Move closer or continue if it is readable."
+
+            ScanQualityIssue.TOO_DARK in issues ||
+                ScanQualityIssue.TOO_BRIGHT in issues ||
+                ScanQualityIssue.OVEREXPOSED in issues ->
+                "Lighting may make this page hard to read. Improve lighting or continue if it is readable."
+
+            ScanQualityIssue.BLURRY in issues ->
+                "This page may be blurry. Hold steady and rescan, or continue if it is readable."
+
+            else -> "This scan may be hard to read. Rescan or continue if it is usable."
+        }
+        return ReviewQualityWarning(message = message, issues = issues)
     }
 
     private val ScannedPage.needsReviewProcessing: Boolean

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.toUserMessage
 import com.docly.app.domain.model.DocumentMetadata
+import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.usecase.export.ExportDocumentUseCase
 import com.docly.app.domain.usecase.export.PrepareExportUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -124,16 +125,17 @@ class ExportViewModel @Inject constructor(
 
                 is AppResult.Success -> {
                     val document = result.data.document
+                    val pdfPath = (document.fileRef as? FileRef.InternalFile)?.path.orEmpty()
                     _uiState.update { currentState ->
                         currentState.copy(
-                            fileName = document.title + PDF_EXTENSION,
-                            title = document.title,
-                            metadataSummary = document.metadata.summaryText(),
-                            pageCount = document.pageCount,
+                            fileName = document.name + PDF_EXTENSION,
+                            title = document.name,
+                            metadataSummary = "Scanned document",
+                            pageCount = document.pageCount ?: 0,
                             isExporting = false,
                             isExportReady = false,
                             exportedDocumentId = document.id,
-                            exportedPdfPath = document.pdfPath,
+                            exportedPdfPath = pdfPath,
                             errorMessage = null
                         )
                     }

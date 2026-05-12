@@ -4,8 +4,10 @@ enum class AppErrorCategory {
     CAMERA,
     PERMISSION,
     PROCESSING,
+    OCR,
     STORAGE,
     PDF,
+    NETWORK,
     VALIDATION,
     UNKNOWN
 }
@@ -71,15 +73,18 @@ fun AppErrorCategory.defaultUserMessage(): String = when (this) {
     AppErrorCategory.CAMERA -> "Camera is unavailable. Please try again."
     AppErrorCategory.PERMISSION -> "Permission is required to continue."
     AppErrorCategory.PROCESSING -> "We could not process this page. Please try again."
+    AppErrorCategory.OCR -> "We could not extract text from this document."
     AppErrorCategory.STORAGE -> "We could not save or load this file. Please try again."
     AppErrorCategory.PDF -> "We could not create the PDF. Please try again."
+    AppErrorCategory.NETWORK -> "The network request failed. Please try again."
     AppErrorCategory.VALIDATION -> "Please check the required information and try again."
     AppErrorCategory.UNKNOWN -> "Something went wrong. Please try again."
 }
 
-fun AppResult.Error.toUserMessage(): String = if (
-    category == AppErrorCategory.VALIDATION &&
-    message.isNotBlank()
+fun AppResult.Error.toUserMessage(): String = if (category in setOf(
+        AppErrorCategory.NETWORK,
+        AppErrorCategory.VALIDATION
+    ) && message.isNotBlank()
 ) {
     message
 } else if (

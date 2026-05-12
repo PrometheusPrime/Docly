@@ -158,7 +158,7 @@ private fun CropCornerHandle(
     )
 }
 
-private val CropHandleSize = 28.dp
+private val CropHandleSize = 48.dp
 
 private val CropCorner.contentDescription: String
     get() = when (this) {

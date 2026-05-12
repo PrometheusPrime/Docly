@@ -3,6 +3,7 @@ package com.docly.app.app.navigation
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -39,13 +40,16 @@ class Phase05NavigationTest {
     }
 
     @Test
-    fun appStartsOnScannerScreen() {
-        composeRule.onNodeWithTag(DoclyTestTags.SCANNER_SCREEN)
+    fun appStartsOnHomeScreen() {
+        composeRule.onNodeWithTag("home_screen")
             .assertIsDisplayed()
     }
 
     @Test
-    fun scannerShowsPhotoImportActions() {
+    fun homeCanNavigateToScanner() {
+        composeRule.onNodeWithText("Scan")
+            .performClick()
+
         composeRule.onNodeWithTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
             .assertExists()
 
@@ -54,8 +58,8 @@ class Phase05NavigationTest {
     }
 
     @Test
-    fun scannerCanNavigateToLibraryAndBackToScanner() {
-        composeRule.onNodeWithTag(DoclyTestTags.OPEN_LIBRARY_ACTION)
+    fun homeCanNavigateToDocumentsAndBackToScanner() {
+        composeRule.onNodeWithText("Documents")
             .performClick()
 
         composeRule.onNodeWithTag(DoclyTestTags.LIBRARY_SCREEN)

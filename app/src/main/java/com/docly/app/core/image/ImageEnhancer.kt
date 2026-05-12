@@ -49,10 +49,13 @@ class OpenCvImageEnhancer @Inject constructor(
         }
 
         var enhancedBitmap: Bitmap? = null
+        var shouldRecycleDecodedBitmap = true
         return try {
             enhancedBitmap = withContext(dispatcherProvider.default) {
                 decodedBitmap.enhanceToBitmap(scanMode)
             }
+            decodedBitmap.recycle()
+            shouldRecycleDecodedBitmap = false
             withContext(dispatcherProvider.io) {
                 enhancedBitmap?.writeJpeg(outputPath)
                     ?: throw IllegalStateException("Enhanced image was not created.")
@@ -67,7 +70,9 @@ class OpenCvImageEnhancer @Inject constructor(
             )
         } finally {
             enhancedBitmap?.recycle()
-            decodedBitmap.recycle()
+            if (shouldRecycleDecodedBitmap) {
+                decodedBitmap.recycle()
+            }
         }
     }
 

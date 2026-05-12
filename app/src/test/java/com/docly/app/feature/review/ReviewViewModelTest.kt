@@ -2,6 +2,8 @@ package com.docly.app.feature.review
 
 import androidx.lifecycle.SavedStateHandle
 import com.docly.app.core.common.IdProvider
+import com.docly.app.core.image.ScanQualityAssessment
+import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
@@ -21,6 +23,7 @@ import com.docly.app.domain.repository.ScanRepository
 import com.docly.app.domain.usecase.page.AcceptReviewedPageUseCase
 import com.docly.app.domain.usecase.page.ApplyPageCropUseCase
 import com.docly.app.domain.usecase.page.DeletePageUseCase
+import com.docly.app.domain.usecase.page.EvaluateScanQualityUseCase
 import com.docly.app.domain.usecase.page.RotatePageUseCase
 import com.docly.app.domain.usecase.session.GetScanSessionUseCase
 import kotlinx.coroutines.Dispatchers
@@ -363,6 +366,126 @@ class ReviewViewModelTest {
     }
 
     @Test
+    fun qualityWarningBlocksAcceptUntilContinueIsClicked() = runTest {
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(
+                page = samplePage(
+                    corners = sampleCorners(),
+                    processedImagePath = "/processed/page.jpg",
+                    reviewStatus = PageReviewStatus.PENDING
+                )
+            ),
+            imageProcessingRepository = FakeImageProcessingRepository(
+                qualityResult = AppResult.Success(
+                    ScanQualityAssessment.good().copy(issues = setOf(ScanQualityIssue.BLURRY))
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(setOf(ScanQualityIssue.BLURRY), viewModel.uiState.value.qualityWarning?.issues)
+        assertFalse(viewModel.uiState.value.canAccept)
+
+        viewModel.onEvent(ReviewUiEvent.OnAcceptClicked)
+        assertEquals("Review the scan warning before accepting this page.", viewModel.uiState.value.errorMessage)
+
+        viewModel.onEvent(ReviewUiEvent.OnContinueWithLowQualityClicked)
+
+        assertTrue(viewModel.uiState.value.isQualityWarningAcknowledged)
+        assertTrue(viewModel.uiState.value.canAccept)
+    }
+
+    @Test
+    fun qualityWarningRescanUsesExistingPendingPageDeleteFlow() = runTest {
+        val scanRepository = FakeScanRepository(
+            page = samplePage(
+                corners = sampleCorners(),
+                processedImagePath = "/processed/page.jpg",
+                reviewStatus = PageReviewStatus.PENDING
+            )
+        )
+        val viewModel = viewModel(
+            scanRepository = scanRepository,
+            imageProcessingRepository = FakeImageProcessingRepository(
+                qualityResult = AppResult.Success(
+                    ScanQualityAssessment.good().copy(issues = setOf(ScanQualityIssue.TOO_DARK))
+                )
+            )
+        )
+        advanceUntilIdle()
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(ReviewUiEvent.OnRescanClicked)
+        advanceUntilIdle()
+
+        assertEquals(listOf("page-id"), scanRepository.deletedPageIds)
+        assertEquals(ReviewUiEffect.NavigateBackToScanner("session-id"), effect.await())
+    }
+
+    @Test
+    fun passingQualityAssessmentDoesNotShowWarning() = runTest {
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(
+                page = samplePage(
+                    corners = sampleCorners(),
+                    processedImagePath = "/processed/page.jpg",
+                    reviewStatus = PageReviewStatus.PENDING
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.qualityWarning)
+        assertTrue(viewModel.uiState.value.canAccept)
+    }
+
+    @Test
+    fun qualityEvaluationFailureDoesNotBlockReview() = runTest {
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(
+                page = samplePage(
+                    corners = sampleCorners(),
+                    processedImagePath = "/processed/page.jpg",
+                    reviewStatus = PageReviewStatus.PENDING
+                )
+            ),
+            imageProcessingRepository = FakeImageProcessingRepository(
+                qualityResult = AppResult.Error(
+                    message = "Scan quality could not be evaluated.",
+                    category = AppErrorCategory.PROCESSING
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.qualityWarning)
+        assertTrue(viewModel.uiState.value.canAccept)
+    }
+
+    @Test
+    fun cornerChangeRecomputesQualityWithEditedCorners() = runTest {
+        val imageProcessingRepository = FakeImageProcessingRepository()
+        val editedCorners = sampleCorners().copy(topLeft = PointFSerializable(1f, 2f))
+        val viewModel = viewModel(
+            scanRepository = FakeScanRepository(
+                page = samplePage(
+                    corners = sampleCorners(),
+                    processedImagePath = "/processed/page.jpg",
+                    reviewStatus = PageReviewStatus.PENDING
+                )
+            ),
+            imageProcessingRepository = imageProcessingRepository
+        )
+        advanceUntilIdle()
+
+        viewModel.onEvent(ReviewUiEvent.OnCornersChanged(editedCorners))
+        advanceUntilIdle()
+
+        assertEquals(editedCorners, imageProcessingRepository.qualityRequests.last().corners)
+    }
+
+    @Test
     fun rescanDeletesPendingPageAndNavigatesBackToScannerWhenNoPendingPagesRemain() = runTest {
         val scanRepository = FakeScanRepository(
             page = samplePage(
@@ -397,6 +520,7 @@ class ReviewViewModelTest {
             fileRepository = fileRepository,
             idProvider = idProvider
         ),
+        evaluateScanQualityUseCase = EvaluateScanQualityUseCase(imageProcessingRepository),
         acceptReviewedPageUseCase = AcceptReviewedPageUseCase(scanRepository),
         deletePageUseCase = DeletePageUseCase(scanRepository),
         rotatePageUseCase = RotatePageUseCase(scanRepository)
@@ -490,9 +614,21 @@ class ReviewViewModelTest {
             AppResult.Success(Unit)
     }
 
-    private class FakeImageProcessingRepository(private val processResult: AppResult<ProcessedPageResult>? = null) :
-        ImageProcessingRepository {
+    private class FakeImageProcessingRepository(
+        private val processResult: AppResult<ProcessedPageResult>? = null,
+        private val qualityResult: AppResult<ScanQualityAssessment> = AppResult.Success(ScanQualityAssessment.good())
+    ) : ImageProcessingRepository {
+        val qualityRequests: MutableList<QualityRequest> = mutableListOf()
+
         override suspend fun detectDocument(inputPath: String): AppResult<PageCorners?> = AppResult.Success(null)
+
+        override suspend fun evaluateQuality(
+            inputPath: String,
+            corners: PageCorners?
+        ): AppResult<ScanQualityAssessment> {
+            qualityRequests += QualityRequest(inputPath = inputPath, corners = corners)
+            return qualityResult
+        }
 
         override suspend fun processPage(
             inputPath: String,
@@ -513,6 +649,8 @@ class ReviewViewModelTest {
         override suspend fun generateThumbnail(inputPath: String, outputPath: String): AppResult<String> =
             AppResult.Success(outputPath)
     }
+
+    private data class QualityRequest(val inputPath: String, val corners: PageCorners?)
 
     private class FakeFileRepository(private val storageResult: AppResult<Unit> = AppResult.Success(Unit)) :
         FileRepository {

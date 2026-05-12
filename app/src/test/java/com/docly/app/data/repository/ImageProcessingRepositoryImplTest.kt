@@ -3,6 +3,9 @@ package com.docly.app.data.repository
 import com.docly.app.core.image.DocumentDetector
 import com.docly.app.core.image.ImageEnhancer
 import com.docly.app.core.image.PerspectiveTransformer
+import com.docly.app.core.image.ScanQualityAssessment
+import com.docly.app.core.image.ScanQualityEvaluator
+import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.core.image.ThumbnailGenerator
 import com.docly.app.core.image.WarpResult
 import com.docly.app.core.result.AppErrorCategory
@@ -154,14 +157,38 @@ class ImageProcessingRepositoryImplTest {
         assertFalse(thumbnailOutput.exists())
     }
 
+    @Test
+    fun evaluateQualityDelegatesToScanQualityEvaluator() = runBlocking {
+        val qualityAssessment = ScanQualityAssessment.good().copy(
+            issues = setOf(ScanQualityIssue.BLURRY)
+        )
+        val scanQualityEvaluator = FakeScanQualityEvaluator(
+            result = AppResult.Success(qualityAssessment)
+        )
+        val corners = sampleCorners()
+
+        val result = repository(scanQualityEvaluator = scanQualityEvaluator).evaluateQuality(
+            inputPath = "/raw/page.jpg",
+            corners = corners
+        )
+
+        assertEquals(qualityAssessment, result.getOrNull())
+        assertEquals(
+            QualityRequest(imagePath = "/raw/page.jpg", corners = corners),
+            scanQualityEvaluator.requests.single()
+        )
+    }
+
     private fun repository(
         perspectiveTransformer: PerspectiveTransformer = FakePerspectiveTransformer(),
         imageEnhancer: ImageEnhancer = FakeImageEnhancer(),
+        scanQualityEvaluator: ScanQualityEvaluator = FakeScanQualityEvaluator(),
         thumbnailGenerator: ThumbnailGenerator = FakeThumbnailGenerator()
     ): ImageProcessingRepositoryImpl = ImageProcessingRepositoryImpl(
         documentDetector = FakeDocumentDetector(),
         perspectiveTransformer = perspectiveTransformer,
         imageEnhancer = imageEnhancer,
+        scanQualityEvaluator = scanQualityEvaluator,
         thumbnailGenerator = thumbnailGenerator
     )
 
@@ -217,9 +244,22 @@ class ImageProcessingRepositoryImplTest {
         }
     }
 
+    private class FakeScanQualityEvaluator(
+        private val result: AppResult<ScanQualityAssessment> = AppResult.Success(ScanQualityAssessment.good())
+    ) : ScanQualityEvaluator {
+        val requests: MutableList<QualityRequest> = mutableListOf()
+
+        override suspend fun evaluate(imagePath: String, corners: PageCorners?): AppResult<ScanQualityAssessment> {
+            requests += QualityRequest(imagePath = imagePath, corners = corners)
+            return result
+        }
+    }
+
     private data class WarpRequest(val imagePath: String, val corners: PageCorners, val outputPath: String)
 
     private data class EnhanceRequest(val inputPath: String, val outputPath: String, val scanMode: ScanMode)
 
     private data class ThumbnailRequest(val inputPath: String, val outputPath: String)
+
+    private data class QualityRequest(val imagePath: String, val corners: PageCorners?)
 }

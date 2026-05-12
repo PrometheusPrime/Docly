@@ -1,5 +1,9 @@
 package com.docly.app.feature.export
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -8,6 +12,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
@@ -32,7 +38,7 @@ class ExportScreenStateTest {
     }
 
     @Test
-    fun notReadyStateShowsErrorAndDisablesExport() {
+    fun notReadyStateShowsBlockingError() {
         renderExport(
             uiState = ExportUiState(
                 sessionId = SESSION_ID,
@@ -40,12 +46,12 @@ class ExportScreenStateTest {
             )
         )
 
-        composeRule.onNodeWithTag(DoclyTestTags.EXPORT_ERROR_MESSAGE)
+        composeRule.onNodeWithTag(DoclyTestTags.ERROR_CONTENT)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Export is not ready")
             .assertIsDisplayed()
         composeRule.onNodeWithText("Process every page before export.")
             .assertIsDisplayed()
-        composeRule.onNodeWithTag(DoclyTestTags.EXPORT_PDF_ACTION)
-            .assertIsNotEnabled()
     }
 
     @Test
@@ -117,6 +123,28 @@ class ExportScreenStateTest {
                 receivedEvents
             )
         }
+    }
+
+    @Test
+    fun largeFontKeepsExportCompletedActionsReachableOnCompactWidth() {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density = density.density, fontScale = 2f)) {
+                DoclyTheme {
+                    Box(modifier = androidx.compose.ui.Modifier.width(320.dp)) {
+                        ExportScreen(
+                            uiState = readyState().copy(exportedPdfPath = "/pdf/document.pdf"),
+                            onEvent = {},
+                            onNavigateBack = {}
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.EXPORT_LIBRARY_ACTION)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     private fun renderExport(uiState: ExportUiState, onEvent: (ExportUiEvent) -> Unit = {}) {

@@ -1,6 +1,9 @@
 package com.docly.app.domain.repository
 
+import com.docly.app.core.image.ScanQualityAssessment
 import com.docly.app.core.result.AppResult
+import com.docly.app.domain.model.DiagnosticEvent
+import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.ImportedRawImage
 import com.docly.app.domain.model.OrphanCleanupResult
@@ -11,7 +14,10 @@ import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
+import com.docly.app.domain.model.toDoclyDocument
+import com.docly.app.domain.model.toSavedDocumentCompat
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 interface ScanRepository {
     suspend fun createSession(scanMode: ScanMode): AppResult<ScanSession>
@@ -29,14 +35,48 @@ interface ScanRepository {
 }
 
 interface DocumentRepository {
-    fun observeSavedDocuments(): Flow<List<SavedDocument>>
-    suspend fun saveDocument(document: SavedDocument): AppResult<Unit>
-    suspend fun getDocument(documentId: String): AppResult<SavedDocument?>
+    fun observeDocuments(): Flow<List<DoclyDocument>>
+    fun searchDocuments(query: String): Flow<List<DoclyDocument>> = observeDocuments()
+    suspend fun getDocument(documentId: String): AppResult<DoclyDocument?>
+    suspend fun importDocument(uriString: String): AppResult<DoclyDocument>
+    suspend fun upsertDocument(document: DoclyDocument): AppResult<Unit>
+    suspend fun renameDocument(documentId: String, name: String): AppResult<Unit>
     suspend fun deleteDocument(documentId: String): AppResult<Unit>
+    suspend fun toggleFavorite(documentId: String, isFavorite: Boolean): AppResult<Unit>
+    suspend fun updateLastOpened(documentId: String): AppResult<Unit>
+
+    @Deprecated("Use observeDocuments.")
+    fun observeSavedDocuments(): Flow<List<SavedDocument>> = observeDocuments().map { documents ->
+        documents.map { document -> document.toSavedDocumentCompat() }
+    }
+
+    @Deprecated("Use searchDocuments.")
+    fun searchSavedDocuments(query: String): Flow<List<SavedDocument>> = searchDocuments(query).map { documents ->
+        documents.map { document -> document.toSavedDocumentCompat() }
+    }
+
+    @Deprecated("Use upsertDocument.")
+    suspend fun saveDocument(document: SavedDocument): AppResult<Unit> = upsertDocument(document.toDoclyDocument())
+
+    @Deprecated("Use getDocument.")
+    suspend fun getSavedDocument(documentId: String): AppResult<SavedDocument?> = when (
+        val result = getDocument(documentId)
+    ) {
+        is AppResult.Error -> result
+        is AppResult.Success -> AppResult.Success(result.data?.toSavedDocumentCompat())
+    }
+}
+
+interface DiagnosticsRepository {
+    suspend fun record(event: DiagnosticEvent): AppResult<Unit>
+    fun observeRecent(limit: Int = 100): Flow<List<DiagnosticEvent>>
 }
 
 interface ImageProcessingRepository {
     suspend fun detectDocument(inputPath: String): AppResult<PageCorners?>
+
+    suspend fun evaluateQuality(inputPath: String, corners: PageCorners?): AppResult<ScanQualityAssessment> =
+        AppResult.Success(ScanQualityAssessment.good())
 
     suspend fun processPage(
         inputPath: String,

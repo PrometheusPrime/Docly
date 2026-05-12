@@ -3,6 +3,8 @@ package com.docly.app.data.repository
 import com.docly.app.core.image.DocumentDetector
 import com.docly.app.core.image.ImageEnhancer
 import com.docly.app.core.image.PerspectiveTransformer
+import com.docly.app.core.image.ScanQualityAssessment
+import com.docly.app.core.image.ScanQualityEvaluator
 import com.docly.app.core.image.ThumbnailGenerator
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
@@ -17,9 +19,13 @@ class ImageProcessingRepositoryImpl @Inject constructor(
     private val documentDetector: DocumentDetector,
     private val perspectiveTransformer: PerspectiveTransformer,
     private val imageEnhancer: ImageEnhancer,
+    private val scanQualityEvaluator: ScanQualityEvaluator,
     private val thumbnailGenerator: ThumbnailGenerator
 ) : ImageProcessingRepository {
     override suspend fun detectDocument(inputPath: String): AppResult<PageCorners?> = documentDetector.detect(inputPath)
+
+    override suspend fun evaluateQuality(inputPath: String, corners: PageCorners?): AppResult<ScanQualityAssessment> =
+        scanQualityEvaluator.evaluate(imagePath = inputPath, corners = corners)
 
     override suspend fun processPage(
         inputPath: String,

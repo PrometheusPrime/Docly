@@ -1,1063 +1,472 @@
 # Technical Architecture
 
-## Project: **Docly**
+## 1. Architecture Goal
 
-This is the **technical architecture** for a mobile-first scanning system that digitizes papers documents into clean, readable, structured PDFs. It is optimized for **Android**, **offline-first operation**, and **low-to-mid range devices**.
-
----
-
-# 1. Architecture Goals
-
-The architecture must support:
-
-* high-quality page capture
-* perspective correction
-* document enhancement
-* multi-page document assembly
-* PDF export
-* metadata tagging
-* local persistence
-* future backend upload
-* future OCR support
-
-It must also remain:
-
-* modular
-* testable
-* scalable
-* performant on older Android devices
-
----
-
-# 2. Architecture Style
-
-Use a **layered modular architecture** with **MVVM + Use Cases**.
-
-## Recommended structure
+Docly is a local-first Android document workspace. The architecture must support this product loop:
 
 ```text
-presentation/
-domain/
-data/
-core/
-feature_scanner/
-feature_document_editor/
-feature_library/
-feature_metadata/
-feature_export/
+Scan -> Store -> Read -> Create/Edit -> Convert/Export -> Share
 ```
 
-This gives you separation between:
-
-* UI logic
-* business rules
-* storage
-* camera/image processing
-* PDF generation
-* future network sync
-
----
-
-# 3. High-Level System Architecture
+The central rule is capability-based behavior:
 
 ```text
-┌──────────────────────────────┐
-│        Presentation Layer    │
-│ Compose UI + ViewModels      │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│         Domain Layer         │
-│ Use Cases + Entities         │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│          Data Layer          │
-│ Repositories                 │
-│ Local DB / File Storage      │
-│ PDF Service / OCR Service    │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│          Core Layer          │
-│ CameraX / OpenCV / Utils     │
-│ Image Processing / Logging   │
-└──────────────────────────────┘
+Every document type declares what it can view, create, edit, annotate, and convert.
+The UI only exposes actions that are technically supported.
 ```
 
----
+This avoids misleading users with full PDF, DOCX, or XLSX editing promises before those systems exist.
 
-# 4. Module Breakdown
-
-## 4.1 `core-camera`
-
-Handles camera preview, capture, focus, exposure, and frame analysis.
-
-### Responsibilities
-
-* CameraX setup
-* preview stream
-* image capture
-* analysis pipeline
-* auto-capture readiness checks
-
-### Main components
-
-* `CameraController`
-* `CameraFrameAnalyzer`
-* `AutoCaptureEvaluator`
-* `CameraPermissionManager`
-
----
-
-## 4.2 `core-image-processing`
-
-Handles all page detection and enhancement logic.
-
-### Responsibilities
-
-* edge detection
-* contour finding
-* quadrilateral extraction
-* perspective correction
-* denoise
-* thresholding
-* contrast enhancement
-* sharpening
-* optional glare scoring
-
-### Main components
-
-* `DocumentDetector`
-* `CornerOrderingUtil`
-* `PerspectiveTransformer`
-* `ImageEnhancer`
-* `ScanModeProcessor`
-* `ImageCompressionService`
-
-### Likely implementation
-
-* OpenCV
-* some custom bitmap/matrix utilities
-* JNI only if performance later demands it
-
----
-
-## 4.3 `feature-scanner`
-
-Owns the scanning workflow.
-
-### Responsibilities
-
-* start scan session
-* show live overlay
-* capture pages
-* preview result
-* accept/rescan page
-
-### Main classes
-
-* `ScannerViewModel`
-* `ScannerScreen`
-* `CapturePageUseCase`
-* `ProcessCapturedPageUseCase`
-
----
-
-## 4.4 `feature-document-editor`
-
-Manages scanned pages after capture.
-
-### Responsibilities
-
-* reorder pages
-* rotate pages
-* delete pages
-* crop adjust pages
-* apply enhancement mode again
-
-### Main classes
-
-* `DocumentEditorViewModel`
-* `DocumentEditorScreen`
-* `ReorderPagesUseCase`
-* `RotatePageUseCase`
-* `DeletePageUseCase`
-
----
-
-## 4.5 `feature-metadata`
-
-Handles classification and naming.
-
-### Responsibilities
-
-* assign grade
-* assign subject
-* assign year
-* assign paper type
-* generate file names
-* validate required fields
-
-### Main classes
-
-* `MetadataViewModel`
-* `GenerateDocumentNameUseCase`
-* `ValidateMetadataUseCase`
-
----
-
-## 4.6 `feature-export`
-
-Handles final output generation.
-
-### Responsibilities
-
-* PDF generation
-* image export
-* quality/compression selection
-* save to file storage
-* share/export intent
-
-### Main classes
-
-* `ExportViewModel`
-* `GeneratePdfUseCase`
-* `SaveDocumentUseCase`
-* `ShareDocumentUseCase`
-
----
-
-## 4.7 `feature-library`
-
-Displays previously saved scans.
-
-### Responsibilities
-
-* list saved scans
-* open scan details
-* filter/search by metadata
-* delete or re-export
-
-### Main classes
-
-* `LibraryViewModel`
-* `GetSavedDocumentsUseCase`
-* `DeleteDocumentUseCase`
-
----
-
-## 4.8 `data-local`
-
-Responsible for Room database and file persistence.
-
-### Responsibilities
-
-* store scan session metadata
-* store page metadata
-* store exported file references
-* recover incomplete scan sessions
-
-### Main components
-
-* `AppDatabase`
-* `DocumentDao`
-* `PageDao`
-* `ScanSessionDao`
-
----
-
-# 5. Core Data Flow
-
-## 5.1 Scan Flow
+## 2. High-Level Architecture
 
 ```text
-Camera Preview
-   ↓
-Frame Analysis
-   ↓
-Document Boundary Detection
-   ↓
-Auto-Capture Readiness Check
-   ↓
-Image Capture
-   ↓
-Perspective Correction
-   ↓
-Enhancement Pipeline
-   ↓
-Temporary Page Save
-   ↓
-Review / Accept / Rescan
-   ↓
-Add to Scan Session
+Presentation
+  Compose screens, ViewModels, UI state, navigation
+        |
+Domain
+  Use cases, domain models, repository interfaces, capability rules
+        |
+Data
+  Room, repository implementations, storage, parsers, converters
+        |
+Platform
+  ML Kit Document Scanner, SAF, WebView, PdfRenderer, PdfDocument, WorkManager
 ```
 
----
-
-## 5.2 Export Flow
-
-```text
-Scan Session
-   ↓
-Metadata Validation
-   ↓
-Ordered Page Retrieval
-   ↓
-Render Pages to PDF
-   ↓
-Save PDF to App Storage
-   ↓
-Persist Document Record in DB
-   ↓
-Return URI / Share / Upload Later
-```
-
----
-
-# 6. Domain Model
-
-Use plain Kotlin domain models, independent of Android framework.
-
-## 6.1 Main entities
-
-### `ScanSession`
-
-```kotlin
-data class ScanSession(
-    val id: String,
-    val createdAt: Long,
-    val updatedAt: Long,
-    val status: ScanSessionStatus,
-    val pages: List<ScannedPage>
-)
-```
-
-### `ScannedPage`
-
-```kotlin
-data class ScannedPage(
-    val id: String,
-    val sessionId: String,
-    val originalImagePath: String,
-    val processedImagePath: String,
-    val pageIndex: Int,
-    val rotationDegrees: Int,
-    val scanMode: ScanMode,
-    val width: Int,
-    val height: Int
-)
-```
-
-### `DocumentMetadata`
-
-```kotlin
-data class DocumentMetadata(
-    val grade: String,
-    val subject: String,
-    val year: Int,
-    val paperType: String,
-    val paperNumber: String?,
-    val source: String?
-)
-```
-
-### `SavedDocument`
-
-```kotlin
-data class SavedDocument(
-    val id: String,
-    val title: String,
-    val pdfPath: String,
-    val thumbnailPath: String?,
-    val metadata: DocumentMetadata,
-    val pageCount: Int,
-    val createdAt: Long
-)
-```
-
----
-
-# 7. Presentation Layer Architecture
-
-Use **Jetpack Compose + ViewModel + StateFlow**.
-
-## 7.1 Pattern
-
-Each feature should expose:
-
-* `UiState`
-* `UiEvent`
-* `UiEffect` for one-time actions
-
-### Example
-
-```kotlin
-data class ScannerUiState(
-    val isCameraReady: Boolean = false,
-    val detectedCorners: List<PointF> = emptyList(),
-    val isAutoCaptureReady: Boolean = false,
-    val lastCapturedPage: String? = null,
-    val errorMessage: String? = null
-)
-```
-
----
-
-## 7.2 Recommended screens
-
-### Scanner
-
-* camera preview
-* page guide overlay
-* capture button
-* mode switch
-* flash toggle
-* stability hints
-
-### Page Review
-
-* captured page preview
-* crop adjustment
-* rotate
-* accept
-* rescan
-
-### Document Editor
-
-* page thumbnails
-* drag reorder
-* delete page
-* add page
-* continue
-
-### Metadata Screen
-
-* grade
-* subject
-* year
-* paper type
-* file name preview
-
-### Export Screen
-
-* export as PDF
-* quality setting
-* save
-* share
-
-### Library Screen
-
-* list of saved scans
-* search/filter
-* open/export/delete
-
----
-
-# 8. Data Layer Architecture
-
-Repositories should abstract away Room, files, and services.
-
-## 8.1 Repository interfaces
-
-### `ScanRepository`
-
-```kotlin
-interface ScanRepository {
-    suspend fun createSession(): ScanSession
-    suspend fun addPage(sessionId: String, page: ScannedPage)
-    suspend fun getSession(sessionId: String): ScanSession?
-    suspend fun updatePageOrder(sessionId: String, orderedPageIds: List<String>)
-    suspend fun deletePage(pageId: String)
-    suspend fun finalizeSession(sessionId: String)
-}
-```
-
-### `DocumentRepository`
-
-```kotlin
-interface DocumentRepository {
-    suspend fun saveDocument(document: SavedDocument)
-    suspend fun getDocuments(): List<SavedDocument>
-    suspend fun getDocumentById(id: String): SavedDocument?
-    suspend fun deleteDocument(id: String)
-}
-```
-
-### `PdfRepository`
-
-```kotlin
-interface PdfRepository {
-    suspend fun generatePdf(
-        pages: List<ScannedPage>,
-        outputName: String
-    ): String
-}
-```
-
----
-
-# 9. Storage Architecture
-
-Use two storage types:
-
-## 9.1 Room Database
-
-Store structured metadata only.
-
-### Tables
-
-* `scan_sessions`
-* `scanned_pages`
-* `saved_documents`
-
-Do **not** store large images in the database.
-
----
-
-## 9.2 File Storage
-
-Store actual image and PDF files in app-specific storage.
-
-### Recommended directories
-
-```text
-/files/scans/raw/
-/files/scans/processed/
-/files/scans/thumbnails/
-/files/documents/pdf/
-```
-
-### Why
-
-* easier cleanup
-* lower DB bloat
-* simpler file lifecycle control
-
----
-
-# 10. Image Processing Pipeline
-
-This is the heart of the system.
-
-## 10.1 Pipeline stages
-
-### Stage 1: Input normalization
-
-* decode image efficiently
-* rotate based on EXIF if needed
-* scale to working resolution
-
-### Stage 2: Document detection
-
-* grayscale conversion
-* blur
-* edge detection
-* contour detection
-* identify best quadrilateral
-* fallback to manual crop if detection fails
-
-### Stage 3: Perspective transform
-
-* order corners
-* compute homography
-* warp into flat document rectangle
-
-### Stage 4: Enhancement
-
-Depends on selected mode.
-
-#### Document mode
-
-* grayscale
-* adaptive threshold
-* denoise
-* sharpen text
-
-#### Mixed mode
-
-* moderate contrast boost
-* mild denoise
-* line preservation
-* preserve diagrams
-
-#### Color mode
-
-* white balance adjustment
-* mild sharpening
-* color preservation
-
-### Stage 5: Compression and save
-
-* save processed page as JPEG or PNG depending on mode
-* generate thumbnail
-* persist metadata
-
----
-
-# 11. Scan Quality Strategy
-
-You need a quality gate before capture and before export.
-
-## 11.1 Pre-capture checks
-
-* document visible
-* corners stable for N frames
-* brightness acceptable
-* blur below threshold
-* device motion low
-
-## 11.2 Post-capture checks
-
-* page not too dark
-* page not too blurry
-* page not overexposed
-* usable contrast
-
-If a capture fails quality threshold:
-
-* show warning
-* allow immediate retake
-
----
-
-# 12. Camera Architecture
-
-Use **CameraX**.
-
-## 12.1 Use cases
-
-* `Preview`
-* `ImageCapture`
-* `ImageAnalysis`
-
-## 12.2 Analyzer
-
-The analyzer runs on preview frames and computes:
-
-* page contour
-* stability score
-* brightness score
-* blur score
-* auto-capture readiness
-
-## 12.3 Auto-capture logic
-
-Auto-capture only when:
-
-* contour exists
-* area large enough
-* stability maintained for a short duration
-* blur score acceptable
-* no rapid movement
-
----
-
-# 13. PDF Generation Architecture
-
-PDF generation should be isolated behind a service.
-
-## 13.1 Inputs
-
-* ordered list of processed pages
-* output title
-* page size preference
-* compression setting
-
-## 13.2 Outputs
-
-* PDF file path
-* thumbnail preview
-* metadata record
-
-## 13.3 Implementation options
-
-For MVP:
-
-* Android `PdfDocument`
-
-Later, if needed:
-
-* a more advanced PDF library for:
-
-  * metadata embedding
-  * better compression
-  * OCR text layer insertion
-
----
-
-# 14. Metadata Architecture
-
-Metadata should be independent from the raw scan session.
-
-## 14.1 Required fields
-
-* grade
-* subject
-* year
-* paper type
-
-## 14.2 Optional fields
-
-* paper number
-* source
-* notes
-* tags
-
-## 14.3 Filename generation
-
-Use normalized naming:
-
-```text
-G12_Mathematics_2023_Internal_Paper1.pdf
-```
-
-Rules:
-
-* replace spaces with underscores
-* strip special characters
-* consistent casing
-
----
-
-# 15. Offline-First Architecture
-
-This should be an offline-first tool.
-
-## Core principle
-
-Everything needed for scanning and export must work without internet.
-
-### Local-only MVP features
-
-* scan pages
-* process pages
-* save PDF
-* view library
-* edit metadata
-
-### Future online features
-
-* upload to backend
-* OCR cloud processing
-* deduplication
-* admin sync
-
----
-
-# 16. Future Sync Architecture
-
-When backend arrives, use a sync queue model.
-
-## 16.1 Upload queue
-
-Each saved document can have:
-
-* local-only
-* pending upload
-* uploaded
-* failed upload
-
-## 16.2 Sync worker
-
-Use `WorkManager` for:
-
-* background retry
-* network constraint handling
-* charging/Wi-Fi preferences if needed
-
----
-
-# 17. OCR Architecture (Future)
-
-Do not tightly couple OCR to scan generation.
-
-OCR should be a separate pipeline.
-
-## 17.1 OCR modes
-
-### Local OCR
-
-* faster to start
-* privacy-friendly
-* weaker for complex text
-
-### Cloud OCR
-
-* stronger results
-* more expensive
-* requires backend
-
-## 17.2 Recommended OCR architecture
-
-```text
-Saved PDF / Processed Pages
-    ↓
-OCR Service
-    ↓
-Extracted Text Blocks
-    ↓
-Indexed Search Data
-```
-
-For mathematics, treat OCR as:
-
-* supportive
-* not authoritative
-
----
-
-# 18. Error Handling Architecture
-
-Use a consistent result wrapper.
-
-### Example
-
-```kotlin
-sealed class AppResult<out T> {
-    data class Success<T>(val data: T) : AppResult<T>()
-    data class Error(val message: String, val cause: Throwable? = null) : AppResult<Nothing>()
-}
-```
-
-## Error categories
-
-* camera unavailable
-* permission denied
-* document not detected
-* processing failed
-* storage full
-* PDF generation failed
-
-Each feature should map technical errors to user-readable messages.
-
----
-
-# 19. Performance Architecture
-
-Because your target includes lower-end devices, performance matters.
-
-## Strategies
-
-* process preview frames at reduced resolution
-* process full-resolution only on actual capture
-* use background dispatchers for image processing
-* reuse buffers where possible
-* avoid large bitmap retention in memory
-* cache thumbnails, not full images
-* paginate library results if needed
-
-## Threading suggestion
-
-* `Main`: UI only
-* `Default`: image transforms
-* `IO`: file reads/writes, DB, PDF save
-
----
-
-# 20. Security and Privacy Architecture
-
-For MVP:
-
-* store files in app-specific private storage
-* no mandatory cloud upload
-* no user data collection required for scanning
-
-Future:
-
-* encrypt sensitive metadata if needed
-* signed upload requests
-* server-side validation
-
----
-
-# 21. Testing Architecture
-
-You need tests at multiple levels.
-
-## 21.1 Unit tests
-
-Test:
-
-* filename generation
-* metadata validation
-* page ordering
-* export orchestration
-* quality evaluation logic
-
-## 21.2 Integration tests
-
-Test:
-
-* repository + Room
-* file save + DB record creation
-* PDF output generation
-
-## 21.3 Instrumentation tests
-
-Test:
-
-* camera permission flow
-* scan UI flow
-* multi-page editor flow
-
-## 21.4 Image-processing test set
-
-Create a fixed dataset of:
-
-* bright pages
-* dark pages
-* skewed pages
-* pages with diagrams
-* pages with shadows
-
-Use it to validate:
-
-* detection accuracy
-* readability
-* consistency
-
-This is very important.
-
----
-
-# 22. Suggested Package Structure
+Dependency direction:
+
+- Presentation depends on Domain.
+- Data depends on Domain.
+- Domain has no Android framework dependencies.
+- Platform integrations are hidden behind interfaces.
+
+## 3. Recommended Stack
+
+Core:
+
+- Kotlin.
+- Jetpack Compose.
+- Material 3.
+- MVVM with immutable state, events, and one-time effects.
+- Use cases for business operations.
+- Repository interfaces in domain and implementations in data.
+- Coroutines and Flow.
+- Room for metadata.
+- DataStore for settings.
+- Hilt for dependency injection.
+- SAF for file import/export.
+- App-specific storage for managed documents.
+
+Document systems:
+
+- ML Kit Document Scanner as the first scanner engine.
+- Android `PdfRenderer` or a selected viewer dependency for PDF reading.
+- Android `PdfDocument` for image-to-PDF generation.
+- WebView print adapter for TXT/Markdown/HTML-to-PDF.
+- WebView for HTML preview/reader with JavaScript disabled by default.
+- Markdown parser for Markdown rendering and conversion.
+- Apache POI or a commercial SDK later for simplified DOCX/XLSX parsing/export.
+- ML Kit Text Recognition later for OCR.
+
+## 4. Package Architecture
+
+The MVP may remain a single Android app module, but packages should preserve extraction boundaries.
 
 ```text
 com.docly.app
-├── core
-│   ├── camera
-│   ├── image
-│   ├── pdf
-│   ├── util
-│   └── logging
-├── data
-│   ├── db
-│   ├── repository
-│   ├── storage
-│   └── mapper
-├── domain
-│   ├── model
-│   ├── repository
-│   └── usecase
-├── feature
-│   ├── scanner
-│   ├── review
-│   ├── editor
-│   ├── metadata
-│   ├── export
-│   └── library
-└── app
-    ├── navigation
-    ├── di
-    └── ui
+|-- app
+|   |-- di
+|   |-- navigation
+|   `-- MainActivity.kt
+|-- core
+|   |-- common
+|   |-- dispatchers
+|   |-- errors
+|   |-- file
+|   |-- permissions
+|   |-- result
+|   |-- settings
+|   `-- time
+|-- data
+|   |-- local
+|   |-- mapper
+|   |-- parser
+|   |-- repository
+|   |-- storage
+|   `-- converter
+|-- domain
+|   |-- capability
+|   |-- model
+|   |-- repository
+|   `-- usecase
+|-- scanner
+|-- documents
+|-- reader
+|-- creator
+|-- editor
+|-- converter
+|-- tools
+|-- ocr
+|-- settings
+`-- ui
 ```
 
----
+Future module split:
 
-# 23. Recommended Tech Stack
+```text
+:app
+:core
+:domain
+:data
+:feature-documents
+:feature-scanner
+:feature-reader
+:feature-creator
+:feature-editor
+:feature-converter
+:feature-tools
+:feature-settings
+:feature-ocr
+```
 
-## Core stack
+## 5. Domain Model Strategy
 
-* **Kotlin**
-* **Jetpack Compose**
-* **CameraX**
-* **Room**
-* **WorkManager**
-* **Coroutines / Flow**
-* **OpenCV**
+The unified document model is the center of the app.
 
-## Nice additions later
+```kotlin
+enum class DocumentType {
+    PDF,
+    TXT,
+    MARKDOWN,
+    HTML,
+    DOCX,
+    XLSX,
+    CSV,
+    IMAGE,
+    UNKNOWN
+}
+```
 
-* **ML Kit Text Recognition**
-* **Hilt** for dependency injection
-* **Timber** or structured logging abstraction
-* **Coil** for image loading in page thumbnails
+```kotlin
+sealed class FileRef {
+    data class InternalFile(val path: String) : FileRef()
+    data class ExternalUri(val uri: String) : FileRef()
+}
+```
 
----
+```kotlin
+data class DoclyDocument(
+    val id: String,
+    val name: String,
+    val type: DocumentType,
+    val mimeType: String?,
+    val fileRef: FileRef,
+    val folderId: String?,
+    val thumbnailPath: String?,
+    val fileSize: Long,
+    val pageCount: Int?,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val lastOpenedAt: Long?,
+    val isFavorite: Boolean,
+    val isScanned: Boolean,
+    val ocrStatus: OcrStatus
+)
+```
 
-# 24. MVP Technical Cut
+Capability profile:
 
-To keep the build realistic, the MVP should include only this:
+```kotlin
+data class DocumentCapabilities(
+    val canView: Boolean,
+    val canCreate: Boolean,
+    val canEdit: Boolean,
+    val canAnnotate: Boolean,
+    val canConvert: Boolean,
+    val isSimplifiedView: Boolean
+)
+```
 
-## Included
+Capability rules:
 
-* manual capture
-* edge detection
-* manual corner adjustment
-* perspective correction
-* 3 enhancement modes
-* multi-page session
-* reorder/delete/rotate pages
-* metadata entry
-* PDF export
-* local library
+- PDF: view and create in MVP; page tools for Docly-created scan PDFs; annotation later.
+- TXT, Markdown, HTML: view, create, edit, and convert in MVP.
+- DOCX: simplified reader after core readers; no direct editing early.
+- XLSX: simplified table reader after core readers; no full spreadsheet editing early.
+- Images: view/import/scan and convert to PDF.
 
-## Excluded from MVP
+## 6. Storage Architecture
 
-* OCR
-* anti-glare multi-frame fusion
-* backend upload
-* auto subject/year detection
-* public contribution workflows
+Room stores metadata only. Files store document content.
 
-That cut is aggressive enough to be useful, but still buildable.
+Room tables:
 
----
+```text
+documents
+folders
+scan_sessions
+scan_pages
+conversion_jobs
+recent_documents
+document_tags
+ocr_results
+settings
+```
 
-# 25. Recommended Build Sequence
+Internal file storage:
 
-## Phase 1: Foundation
+```text
+files/docly/
+|-- documents/
+|   |-- pdf/
+|   |-- txt/
+|   |-- markdown/
+|   |-- html/
+|   |-- docx/
+|   |-- xlsx/
+|   |-- csv/
+|   `-- images/
+|-- scans/
+|   |-- sessions/
+|   `-- pages/
+|-- thumbnails/
+|-- exports/
+|-- temp/
+`-- ocr/
+```
 
-* project setup
-* navigation
-* Room
-* file storage
-* base domain/data structure
+Storage rules:
 
-## Phase 2: Scanner
+- Imported files are copied into internal storage unless the user explicitly chooses URI-only behavior.
+- Original external files are not overwritten unless the user explicitly exports over them through SAF.
+- Thumbnails are generated for library and reader previews.
+- Large binary content is never stored in Room.
 
-* CameraX preview
-* manual capture
-* page detection overlay
+## 7. Scanner Architecture
 
-## Phase 3: Processing
+Scanner flow:
 
-* perspective correction
-* enhancement modes
-* page save pipeline
+```text
+User taps Scan
+  -> DocumentScannerService launches scanner
+  -> scanner returns image/PDF result URIs
+  -> Docly copies pages into internal scan storage
+  -> ScanSession and ScanPage records are created
+  -> user reviews pages
+  -> user saves PDF/images
+  -> outputs become DoclyDocument records
+```
 
-## Phase 4: Editor
+Primary engine:
 
-* page review
-* reorder/delete/rotate
-* rescan support
+- `MlKitDocumentScannerService` wraps ML Kit Document Scanner.
+- It returns scan result URIs and hides SDK details from ViewModels.
 
-## Phase 5: Export
+Engine abstraction:
 
-* metadata form
-* PDF generator
-* document library
+```kotlin
+interface DocumentScannerService {
+    suspend fun scanDocuments(options: ScanOptions): AppResult<ScanResult>
+}
+```
 
-## Phase 6: Hardening
+Future engine:
 
-* quality checks
-* performance optimization
-* test dataset
-* crash reduction
+- A custom CameraX/OpenCV scanner may be added later for more control, PhotoScan-style capture guidance, live overlays, advanced filters, and fallback support.
+- The custom engine must implement the same service contract.
 
----
+## 8. Reader Architecture
 
-# 26. Architecture Decision Summary
+Reader resolution:
 
-## Chosen decisions
+```text
+DoclyDocument
+  -> DocumentOpenResolver
+  -> PDF/TXT/Markdown/HTML/DOCX/XLSX route
+```
 
-* **Android-first**
-* **offline-first**
-* **MVVM + use cases**
-* **Room + file storage**
-* **CameraX for capture**
-* **OpenCV for processing**
-* **PDF generation as isolated service**
-* **OCR deferred**
-* **internal/admin ingestion first**
+Reader engines:
+
+- `PdfReaderEngine` renders PDF pages lazily and caches visible page bitmaps.
+- `TextReaderEngine` streams or reads text safely based on file size.
+- `MarkdownReaderEngine` parses Markdown to a preview model or sanitized HTML.
+- `HtmlReaderEngine` loads local HTML into WebView.
+- `DocxReaderEngine` extracts simplified blocks.
+- `XlsxReaderEngine` extracts workbook sheets and cell values.
+
+Large-file rules:
+
+- Do not render all PDF pages at once.
+- Do not keep full-resolution page bitmaps in Compose state.
+- Show clear unsupported or simplified rendering messages when needed.
+
+## 9. Creator And Editor Architecture
+
+Creator:
+
+```text
+Create screen
+  -> select type
+  -> create internal file
+  -> insert DocumentEntity
+  -> open matching editor
+```
+
+Editable MVP formats:
+
+- TXT uses direct text editing.
+- Markdown uses source editing plus preview.
+- HTML uses source editing plus WebView preview.
+
+PDF creation:
+
+- Images/scans to PDF use `PdfDocument`.
+- TXT/Markdown/HTML to PDF use HTML rendering and WebView print.
+
+Future internal model:
+
+```kotlin
+data class RichDocument(
+    val id: String,
+    val title: String,
+    val blocks: List<DocumentBlock>,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+```
+
+This model supports later rich editing and export to PDF, HTML, Markdown, TXT, DOCX, and table-focused XLSX.
+
+## 10. Converter Architecture
+
+Conversion is registry-based.
+
+```kotlin
+data class ConversionPair(
+    val input: DocumentType,
+    val output: DocumentType
+)
+```
+
+```kotlin
+interface ConverterEngine {
+    val supportedPairs: List<ConversionPair>
+    suspend fun convert(request: ConversionRequest): AppResult<ConversionResult>
+}
+```
+
+```text
+Converter screen
+  -> input selection
+  -> type detection
+  -> supported output lookup
+  -> conversion job
+  -> output file
+  -> DoclyDocument registration
+```
+
+MVP conversion engines:
+
+- TXT to PDF, HTML, Markdown.
+- Markdown to HTML, PDF, TXT.
+- HTML to PDF, TXT.
+- Images to PDF.
+
+Later conversion engines:
+
+- DOCX to TXT.
+- DOCX to simple HTML.
+- XLSX to CSV.
+- XLSX to TXT.
+- PDF to images or OCR text.
+
+## 11. OCR And Background Work
+
+OCR is not part of the critical MVP path.
+
+OCR architecture:
+
+```text
+Scanned image or scanned PDF
+  -> OCR service
+  -> page-level text result
+  -> OCR result editor
+  -> local search index
+```
+
+Use WorkManager for:
+
+- OCR.
+- Batch conversion.
+- Thumbnail generation.
+- PDF compression.
+- Future cloud backup only after privacy review.
+
+OCR must fail independently:
+
+- Failed OCR must not corrupt the source document.
+- OCR text is support data, not the authoritative document.
+
+## 12. Privacy And Security Architecture
+
+MVP privacy posture:
+
+- Local-first.
+- No account required.
+- No server conversion.
+- No automatic upload.
+- No document content analytics.
+- Camera permission requested only when scanning.
+- SAF used for import/export.
+- FileProvider used only for explicit share/open actions.
+
+Future cloud posture:
+
+- Cloud features require explicit user action, documented consent, privacy review, and release checklist updates.
+- Temporary uploads must be encrypted and deleted according to a defined retention policy.
+
+## 13. Testing Architecture
+
+Unit tests:
+
+- Capability resolver.
+- File type resolver.
+- Conversion registry.
+- Use cases.
+- Mappers.
+- Error mapping.
+- Autosave.
+
+Integration tests:
+
+- Room migrations.
+- Document import and file copy.
+- PDF generation.
+- WebView print/PDF output where practical.
+- Converter output registration.
+
+Instrumentation tests:
+
+- Documents screen.
+- Scanner result handling.
+- Reader screens.
+- Editor save flows.
+- Converter flow.
+- Permission denial states.
+
+Manual QA:
+
+- Physical scanner flow.
+- Large PDFs.
+- Long text files.
+- Basic DOCX/XLSX.
+- Low storage.
+- Offline use.
+- Share/export with Android share sheet and SAF.
+
+## 14. References
+
+- Google ML Kit Document Scanner: <https://developers.google.com/ml-kit/vision/doc-scanner/android>
+- Android `PdfRenderer`: <https://developer.android.com/reference/android/graphics/pdf/PdfRenderer>
+- Android WebView printing: <https://developer.android.com/training/printing/html-docs>
+- Android Storage Access Framework: <https://developer.android.com/training/data-storage/shared/documents-files>

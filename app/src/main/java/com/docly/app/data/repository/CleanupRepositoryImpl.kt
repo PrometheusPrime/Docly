@@ -4,16 +4,17 @@ import com.docly.app.core.dispatchers.DispatcherProvider
 import com.docly.app.core.file.AppFileDirectories
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
-import com.docly.app.data.local.dao.SavedDocumentDao
+import com.docly.app.data.local.dao.DocumentDao
 import com.docly.app.data.local.dao.ScannedPageDao
 import com.docly.app.domain.model.OrphanCleanupResult
 import com.docly.app.domain.repository.CleanupRepository
 import java.io.File
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 
 class CleanupRepositoryImpl @Inject constructor(
     private val scannedPageDao: ScannedPageDao,
-    private val savedDocumentDao: SavedDocumentDao,
+    private val documentDao: DocumentDao,
     private val appFileDirectories: AppFileDirectories,
     private val dispatcherProvider: DispatcherProvider
 ) : CleanupRepository {
@@ -50,11 +51,13 @@ class CleanupRepositoryImpl @Inject constructor(
             addPath(page.processedImagePath)
             addPath(page.thumbnailPath)
         }
-        savedDocumentDao.getAll().forEach { document ->
-            addPath(document.pdfPath)
+        documentDaoSnapshot().forEach { document ->
+            addPath(document.filePath)
             addPath(document.thumbnailPath)
         }
     }
+
+    private suspend fun documentDaoSnapshot() = documentDao.observeAll().first()
 
     private fun MutableSet<String>.addPath(path: String?) {
         if (!path.isNullOrBlank()) {
@@ -66,7 +69,17 @@ class CleanupRepositoryImpl @Inject constructor(
         appFileDirectories.rawScanDirectory,
         appFileDirectories.processedScanDirectory,
         appFileDirectories.thumbnailDirectory,
-        appFileDirectories.pdfDirectory
+        appFileDirectories.pdfDirectory,
+        appFileDirectories.txtDirectory,
+        appFileDirectories.markdownDirectory,
+        appFileDirectories.htmlDirectory,
+        appFileDirectories.docxDirectory,
+        appFileDirectories.xlsxDirectory,
+        appFileDirectories.csvDirectory,
+        appFileDirectories.imageDirectory,
+        appFileDirectories.exportDirectory,
+        appFileDirectories.tempDirectory,
+        appFileDirectories.ocrDirectory
     )
 
     private fun File.managedFiles(): List<File> {

@@ -15,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +39,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +57,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -63,9 +69,12 @@ import com.docly.app.app.di.CameraPreviewBinderEntryPoint
 import com.docly.app.core.camera.CameraPreviewBinder
 import com.docly.app.core.camera.CameraPreviewSession
 import com.docly.app.core.camera.PreviewDocumentBoundary
+import com.docly.app.ui.components.DoclyAdaptiveTwoActionRow
 import com.docly.app.ui.components.DoclyEmptyContent
+import com.docly.app.ui.components.DoclyLoadingContent
 import com.docly.app.ui.components.DoclyScreenScaffold
 import com.docly.app.ui.components.ScanModeSelector
+import com.docly.app.ui.components.doclyMinimumTouchTarget
 import com.docly.app.ui.theme.DoclyTheme
 import com.docly.app.ui.util.DoclyTestTags
 import dagger.hilt.android.EntryPointAccessors
@@ -188,6 +197,9 @@ fun ScannerScreen(
                 )
             )
         },
+        onAutoCaptureToggle = { enabled ->
+            onEvent(ScannerUiEvent.OnAutoCaptureEnabledChanged(enabled))
+        },
         cameraPreview = {
             CameraPreviewView(
                 cameraPreviewBinder = cameraPreviewBinder,
@@ -204,8 +216,8 @@ fun ScannerScreen(
                 onPreviewSessionChanged = { session ->
                     previewSession = session
                 },
-                onDocumentBoundaryChanged = { boundary ->
-                    onEvent(ScannerUiEvent.OnPreviewDocumentBoundaryChanged(boundary))
+                onPreviewFrameAnalysisChanged = { analysis ->
+                    onEvent(ScannerUiEvent.OnPreviewFrameAnalysisChanged(analysis))
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -226,8 +238,17 @@ fun ScannerScreenContent(
     isCaptureAvailable: Boolean,
     onCapture: () -> Unit,
     cameraPreview: @Composable () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAutoCaptureToggle: (Boolean) -> Unit = {}
 ) {
+    var showDiscardRecoveryConfirmation by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.autoCaptureRequestId) {
+        if (uiState.autoCaptureRequestId > 0L) {
+            onCapture()
+        }
+    }
+
     DoclyScreenScaffold(
         title = "Scan",
         screenTestTag = DoclyTestTags.SCANNER_SCREEN,
@@ -239,7 +260,7 @@ fun ScannerScreenContent(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Home,
-                    contentDescription = "Library"
+                    contentDescription = "Open library"
                 )
             }
         }
@@ -260,9 +281,10 @@ fun ScannerScreenContent(
                 onEvent(ScannerUiEvent.OnResumeRecoveredSessionClicked)
             },
             onDiscard = {
-                onEvent(ScannerUiEvent.OnDiscardRecoveredSessionClicked)
+                showDiscardRecoveryConfirmation = true
             }
         )
+        ScannerProgressMessage(uiState = uiState)
         ScanModeSelector(
             selectedScanMode = uiState.scanMode,
             onScanModeSelected = { scanMode -> onEvent(ScannerUiEvent.OnScanModeChanged(scanMode)) },
@@ -278,6 +300,7 @@ fun ScannerScreenContent(
             uiState = uiState,
             isCaptureAvailable = isCaptureAvailable,
             onCapture = onCapture,
+            onAutoCaptureToggle = onAutoCaptureToggle,
             onFlashToggle = {
                 onEvent(ScannerUiEvent.OnFlashToggleClicked)
             }
@@ -301,6 +324,79 @@ fun ScannerScreenContent(
             onAction = onImportSinglePhoto
         )
     }
+
+    RecoveryDiscardConfirmationDialog(
+        showDialog = showDiscardRecoveryConfirmation && uiState.recoveryPrompt != null,
+        isDiscarding = uiState.isDiscardingRecovery,
+        onConfirm = {
+            showDiscardRecoveryConfirmation = false
+            onEvent(ScannerUiEvent.OnDiscardRecoveredSessionClicked)
+        },
+        onDismiss = {
+            showDiscardRecoveryConfirmation = false
+        }
+    )
+}
+
+@Composable
+private fun ScannerProgressMessage(uiState: ScannerUiState) {
+    val message = when {
+        uiState.isCheckingRecovery -> "Checking for unfinished scans..."
+        uiState.isDiscardingRecovery -> "Discarding unfinished scan..."
+        uiState.isCapturing -> "Capturing page..."
+        uiState.isImporting -> "Importing selected photos..."
+        else -> return
+    }
+    DoclyLoadingContent(message = message)
+}
+
+@Composable
+private fun RecoveryDiscardConfirmationDialog(
+    showDialog: Boolean,
+    isDiscarding: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (!showDialog) return
+
+    AlertDialog(
+        onDismissRequest = {
+            if (!isDiscarding) {
+                onDismiss()
+            }
+        },
+        title = { Text(text = "Discard unfinished scan?") },
+        text = {
+            Text(text = "This removes the recovered pages from this unfinished scan.")
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = !isDiscarding,
+                modifier = Modifier
+                    .testTag(DoclyTestTags.RECOVERY_DISCARD_CONFIRM_ACTION)
+                    .doclyMinimumTouchTarget()
+            ) {
+                Text(text = if (isDiscarding) "Discarding..." else "Discard")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isDiscarding,
+                modifier = Modifier
+                    .testTag(DoclyTestTags.RECOVERY_DISCARD_DISMISS_ACTION)
+                    .doclyMinimumTouchTarget()
+            ) {
+                Text(text = "Cancel")
+            }
+        },
+        modifier = Modifier
+            .testTag(DoclyTestTags.RECOVERY_DISCARD_DIALOG)
+            .semantics {
+                contentDescription = "Discard unfinished scan confirmation"
+            }
+    )
 }
 
 @Composable
@@ -314,6 +410,7 @@ private fun CameraPermissionAndPreviewSection(
         CameraPermissionStatus.Granted -> CameraPreviewPanel(
             isCameraReady = uiState.isCameraReady,
             previewBoundary = uiState.previewBoundary,
+            qualityHint = uiState.qualityHint,
             cameraPreview = cameraPreview
         )
 
@@ -366,25 +463,26 @@ private fun RecoveryPrompt(uiState: ScannerUiState, onResume: () -> Unit, onDisc
                 text = "Recovered ${prompt.pageCount.pageCountText()} from your last scan.",
                 style = MaterialTheme.typography.bodyMedium
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onResume,
-                    enabled = !uiState.isDiscardingRecovery,
-                    modifier = Modifier.testTag(DoclyTestTags.RECOVERY_RESUME_ACTION)
-                ) {
-                    Text(text = "Resume")
+            DoclyAdaptiveTwoActionRow(
+                first = { actionModifier ->
+                    Button(
+                        onClick = onResume,
+                        enabled = !uiState.isDiscardingRecovery,
+                        modifier = actionModifier.testTag(DoclyTestTags.RECOVERY_RESUME_ACTION)
+                    ) {
+                        Text(text = "Resume")
+                    }
+                },
+                second = { actionModifier ->
+                    OutlinedButton(
+                        onClick = onDiscard,
+                        enabled = !uiState.isDiscardingRecovery,
+                        modifier = actionModifier.testTag(DoclyTestTags.RECOVERY_DISCARD_ACTION)
+                    ) {
+                        Text(text = if (uiState.isDiscardingRecovery) "Discarding..." else "Discard")
+                    }
                 }
-                OutlinedButton(
-                    onClick = onDiscard,
-                    enabled = !uiState.isDiscardingRecovery,
-                    modifier = Modifier.testTag(DoclyTestTags.RECOVERY_DISCARD_ACTION)
-                ) {
-                    Text(text = if (uiState.isDiscardingRecovery) "Discarding..." else "Discard")
-                }
-            }
+            )
         }
     }
 }
@@ -393,6 +491,7 @@ private fun RecoveryPrompt(uiState: ScannerUiState, onResume: () -> Unit, onDisc
 private fun CameraPreviewPanel(
     isCameraReady: Boolean,
     previewBoundary: PreviewDocumentBoundary?,
+    qualityHint: String?,
     cameraPreview: @Composable () -> Unit
 ) {
     Box(
@@ -401,11 +500,15 @@ private fun CameraPreviewPanel(
             .heightIn(min = 320.dp, max = 520.dp)
             .aspectRatio(3f / 4f)
             .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black),
+            .background(Color.Black)
+            .semantics {
+                contentDescription = if (isCameraReady) "Camera preview" else "Camera preview starting"
+            },
         contentAlignment = Alignment.Center
     ) {
         cameraPreview()
         DocumentBoundaryOverlay(previewBoundary = previewBoundary)
+        PreviewQualityHint(qualityHint = qualityHint)
         if (!isCameraReady) {
             Text(
                 text = "Starting camera...",
@@ -413,6 +516,27 @@ private fun CameraPreviewPanel(
                 color = Color.White
             )
         }
+    }
+}
+
+@Composable
+private fun BoxScope.PreviewQualityHint(qualityHint: String?) {
+    if (qualityHint.isNullOrBlank()) return
+
+    Surface(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(12.dp)
+            .testTag(DoclyTestTags.SCANNER_QUALITY_HINT),
+        shape = RoundedCornerShape(8.dp),
+        color = Color.Black.copy(alpha = 0.72f),
+        contentColor = Color.White
+    ) {
+        Text(
+            text = qualityHint,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
@@ -478,7 +602,9 @@ private fun CameraPermissionMessage(
         )
         Button(
             onClick = onAction,
-            modifier = Modifier.testTag(actionTestTag)
+            modifier = Modifier
+                .testTag(actionTestTag)
+                .doclyMinimumTouchTarget()
         ) {
             Text(text = actionLabel)
         }
@@ -490,15 +616,14 @@ private fun ScannerCaptureControls(
     uiState: ScannerUiState,
     isCaptureAvailable: Boolean,
     onCapture: () -> Unit,
+    onAutoCaptureToggle: (Boolean) -> Unit,
     onFlashToggle: () -> Unit
 ) {
     if (!uiState.isCameraPermissionGranted) return
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    AutoCaptureToggle(uiState = uiState, onAutoCaptureToggle = onAutoCaptureToggle)
+
+    if (!uiState.isFlashAvailable) {
         Button(
             onClick = onCapture,
             enabled = uiState.isCameraReady &&
@@ -506,13 +631,37 @@ private fun ScannerCaptureControls(
                 !uiState.isCapturing &&
                 !uiState.isImporting &&
                 !uiState.hasRecoveryPrompt,
-            modifier = Modifier.testTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
+                .doclyMinimumTouchTarget()
         ) {
             Text(text = if (uiState.isCapturing) "Capturing..." else "Capture")
         }
-        if (uiState.isFlashAvailable) {
+        return
+    }
+
+    DoclyAdaptiveTwoActionRow(
+        first = { actionModifier ->
+            Button(
+                onClick = onCapture,
+                enabled = uiState.isCameraReady &&
+                    isCaptureAvailable &&
+                    !uiState.isCapturing &&
+                    !uiState.isImporting &&
+                    !uiState.hasRecoveryPrompt,
+                modifier = actionModifier.testTag(DoclyTestTags.CAMERA_CAPTURE_ACTION)
+            ) {
+                Text(text = if (uiState.isCapturing) "Capturing..." else "Capture")
+            }
+        },
+        second = { actionModifier ->
             Row(
-                modifier = Modifier.testTag(DoclyTestTags.CAMERA_FLASH_TOGGLE),
+                modifier = actionModifier
+                    .testTag(DoclyTestTags.CAMERA_FLASH_TOGGLE)
+                    .semantics {
+                        contentDescription = if (uiState.isFlashEnabled) "Flash on" else "Flash off"
+                    },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -528,6 +677,48 @@ private fun ScannerCaptureControls(
                 )
             }
         }
+    )
+}
+
+@Composable
+private fun AutoCaptureToggle(uiState: ScannerUiState, onAutoCaptureToggle: (Boolean) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = if (uiState.isAutoCaptureEnabled) {
+                    "Auto capture on"
+                } else {
+                    "Auto capture off"
+                }
+            },
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Auto capture",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Switch(
+                checked = uiState.isAutoCaptureEnabled,
+                enabled =
+                    uiState.isCameraReady && !uiState.isCapturing && !uiState.isImporting && !uiState.hasRecoveryPrompt,
+                onCheckedChange = onAutoCaptureToggle,
+                modifier = Modifier.testTag(DoclyTestTags.SCANNER_AUTO_CAPTURE_TOGGLE)
+            )
+        }
+        if (!uiState.autoCaptureHint.isNullOrBlank()) {
+            Text(
+                text = uiState.autoCaptureHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -537,24 +728,30 @@ private fun ImportActions(
     onImportSinglePhoto: () -> Unit,
     onImportMultiplePhotos: () -> Unit
 ) {
-    Button(
-        onClick = onImportSinglePhoto,
-        enabled = !uiState.isImporting && !uiState.isCapturing && !uiState.hasRecoveryPrompt,
-        modifier = Modifier.testTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
-    ) {
-        Icon(imageVector = Icons.Filled.Add, contentDescription = null)
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text = if (uiState.isImporting) "Importing..." else "Import photo")
-    }
-    OutlinedButton(
-        onClick = onImportMultiplePhotos,
-        enabled = !uiState.isImporting && !uiState.isCapturing && !uiState.hasRecoveryPrompt,
-        modifier = Modifier.testTag(DoclyTestTags.IMPORT_MULTIPLE_PHOTOS_ACTION)
-    ) {
-        Icon(imageVector = Icons.Filled.Add, contentDescription = null)
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text = "Import photos")
-    }
+    DoclyAdaptiveTwoActionRow(
+        first = { actionModifier ->
+            Button(
+                onClick = onImportSinglePhoto,
+                enabled = !uiState.isImporting && !uiState.isCapturing && !uiState.hasRecoveryPrompt,
+                modifier = actionModifier.testTag(DoclyTestTags.IMPORT_SINGLE_PHOTO_ACTION)
+            ) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = if (uiState.isImporting) "Importing..." else "Import photo")
+            }
+        },
+        second = { actionModifier ->
+            OutlinedButton(
+                onClick = onImportMultiplePhotos,
+                enabled = !uiState.isImporting && !uiState.isCapturing && !uiState.hasRecoveryPrompt,
+                modifier = actionModifier.testTag(DoclyTestTags.IMPORT_MULTIPLE_PHOTOS_ACTION)
+            ) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "Import photos")
+            }
+        }
+    )
 }
 
 private fun Int.pageCountText(): String = if (this == 1) "1 page" else "$this pages"
@@ -584,6 +781,7 @@ private fun ScannerScreenPreview() {
             onImportMultiplePhotos = {},
             isCaptureAvailable = false,
             onCapture = {},
+            onAutoCaptureToggle = {},
             cameraPreview = {}
         )
     }

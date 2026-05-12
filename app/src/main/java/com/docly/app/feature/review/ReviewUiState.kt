@@ -1,5 +1,6 @@
 package com.docly.app.feature.review
 
+import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.domain.model.PageCorners
 import com.docly.app.domain.model.PageReviewStatus
 import com.docly.app.domain.model.ScanMode
@@ -25,6 +26,8 @@ data class ReviewUiState(
     val reviewStatus: PageReviewStatus? = null,
     val pendingPageCount: Int = 0,
     val acceptedPageCount: Int = 0,
+    val qualityWarning: ReviewQualityWarning? = null,
+    val isQualityWarningAcknowledged: Boolean = false,
     val errorMessage: String? = null
 ) {
     val hasCropEditor: Boolean
@@ -66,8 +69,14 @@ data class ReviewUiState(
             !isProcessing &&
             !isSaving &&
             !hasPendingScanModeChange &&
-            !hasPendingCropChange
+            !hasPendingCropChange &&
+            !requiresQualityAcknowledgement
 
     val canDiscardForRescan: Boolean
         get() = currentPageId != null && !isProcessing && !isSaving
+
+    val requiresQualityAcknowledgement: Boolean
+        get() = qualityWarning != null && !isQualityWarningAcknowledged
 }
+
+data class ReviewQualityWarning(val message: String, val issues: Set<ScanQualityIssue>)
