@@ -2,7 +2,10 @@ package com.docly.app.domain
 
 import com.docly.app.core.file.FileTypeResolver
 import com.docly.app.domain.capability.DocumentCapabilityResolver
+import com.docly.app.domain.model.DoclyDocument
+import com.docly.app.domain.model.DocumentSource
 import com.docly.app.domain.model.DocumentType
+import com.docly.app.domain.model.FileRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,6 +33,13 @@ class DocumentFoundationTest {
         val pdf = capabilityResolver.resolve(DocumentType.PDF)
         assertTrue(pdf.canView)
         assertFalse(pdf.canEdit)
+        assertFalse(pdf.canManagePages)
+
+        val scannedPdf = capabilityResolver.resolve(
+            document(type = DocumentType.PDF, sourceScanSessionId = "scan-session")
+        )
+        assertFalse(scannedPdf.canEdit)
+        assertTrue(scannedPdf.canManagePages)
 
         val markdown = capabilityResolver.resolve(DocumentType.MARKDOWN)
         assertTrue(markdown.canEdit)
@@ -44,4 +54,18 @@ class DocumentFoundationTest {
         assertFalse(unknown.canView)
         assertEquals("Docly cannot open this file type yet.", unknown.limitationMessage)
     }
+
+    private fun document(type: DocumentType, sourceScanSessionId: String? = null): DoclyDocument = DoclyDocument(
+        id = "document-id",
+        name = "Document",
+        type = type,
+        mimeType = "application/pdf",
+        fileRef = FileRef.InternalFile("/documents/document.pdf"),
+        source = DocumentSource.SCANNED,
+        fileSize = 10L,
+        createdAt = 1L,
+        updatedAt = 1L,
+        isScanned = type == DocumentType.PDF,
+        sourceScanSessionId = sourceScanSessionId
+    )
 }

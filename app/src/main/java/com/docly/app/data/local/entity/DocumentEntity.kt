@@ -30,5 +30,6 @@ data class DocumentEntity(
     val lastOpenedAt: Long?,
     val isFavorite: Boolean,
     val isScanned: Boolean,
-    val ocrStatus: String
+    val ocrStatus: String,
+    val sourceScanSessionId: String?
 )

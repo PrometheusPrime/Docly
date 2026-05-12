@@ -15,6 +15,7 @@ sealed interface LibraryUiEvent {
     data object OnFavoriteFilterToggled : LibraryUiEvent
     data class OnViewModeChanged(val viewMode: ViewMode) : LibraryUiEvent
     data class OnOpenDocumentClicked(val documentId: String) : LibraryUiEvent
+    data class OnEditDocumentClicked(val documentId: String) : LibraryUiEvent
     data class OnShareDocumentClicked(val documentId: String) : LibraryUiEvent
     data class OnFavoriteDocumentClicked(val documentId: String) : LibraryUiEvent
     data class OnRenameDocumentClicked(val documentId: String) : LibraryUiEvent

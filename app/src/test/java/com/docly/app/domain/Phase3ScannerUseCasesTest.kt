@@ -129,6 +129,7 @@ class Phase3ScannerUseCasesTest {
         assertEquals("Receipt", document?.name)
         assertEquals("application/pdf", document?.mimeType)
         assertEquals(1, document?.pageCount)
+        assertEquals("session-1", document?.sourceScanSessionId)
         assertEquals(ScanSessionStatus.EXPORTED, scanRepository.statusBySessionId["session-1"])
         assertEquals(listOf(document?.id), documentRepository.documents.keys.toList())
     }

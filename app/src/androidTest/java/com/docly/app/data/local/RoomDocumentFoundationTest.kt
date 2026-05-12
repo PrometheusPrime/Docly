@@ -78,7 +78,7 @@ class RoomDocumentFoundationTest {
 
         val migratedDatabase = migrationHelper.runMigrationsAndValidate(
             TEST_DATABASE_NAME,
-            4,
+            5,
             true,
             *RoomMigrations.ALL
         )
@@ -97,6 +97,31 @@ class RoomDocumentFoundationTest {
         }
         migratedDatabase.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'saved_documents'")
             .use { cursor -> assertTrue(!cursor.moveToFirst()) }
+        migratedDatabase.close()
+    }
+
+    @Test
+    fun schemaVersion4AddsSourceScanSessionIdToDocuments() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(TEST_DATABASE_NAME)
+
+        migrationHelper.createDatabase(TEST_DATABASE_NAME, 4).close()
+
+        val migratedDatabase = migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE_NAME,
+            5,
+            true,
+            *RoomMigrations.ALL
+        )
+
+        migratedDatabase.query("PRAGMA table_info(documents)").use { cursor ->
+            val columnNameIndex = cursor.getColumnIndex("name")
+            val columns = mutableListOf<String>()
+            while (cursor.moveToNext()) {
+                columns += cursor.getString(columnNameIndex)
+            }
+            assertTrue(columns.contains("sourceScanSessionId"))
+        }
         migratedDatabase.close()
     }
 
@@ -139,7 +164,8 @@ class RoomDocumentFoundationTest {
         lastOpenedAt = null,
         isFavorite = false,
         isScanned = false,
-        ocrStatus = OcrStatus.NOT_STARTED.name
+        ocrStatus = OcrStatus.NOT_STARTED.name,
+        sourceScanSessionId = null
     )
 
     private companion object {

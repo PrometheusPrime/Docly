@@ -14,7 +14,7 @@ sealed interface DocumentOpenTarget {
 
 class DocumentOpenResolver @Inject constructor(private val capabilityResolver: DocumentCapabilityResolver) {
     fun resolve(document: DoclyDocument): DocumentOpenTarget {
-        val capabilities = capabilityResolver.resolve(document.type)
+        val capabilities = capabilityResolver.resolve(document)
         if (!capabilities.canView) {
             return DocumentOpenTarget.Unsupported(
                 capabilities.limitationMessage ?: "Docly cannot open this file type yet."

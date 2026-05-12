@@ -4,6 +4,7 @@ import com.docly.app.core.common.IdProvider
 import com.docly.app.core.dispatchers.DispatcherProvider
 import com.docly.app.core.pdf.HtmlToPdfExporter
 import com.docly.app.core.reader.MarkdownReaderEngine
+import com.docly.app.core.reader.RenderedHtmlDocument
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
@@ -15,8 +16,13 @@ import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.model.OcrStatus
 import com.docly.app.domain.repository.DocumentRepository
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import kotlinx.coroutines.withContext
+import org.commonmark.ext.gfm.tables.TablesExtension
+import org.commonmark.parser.Parser
+import org.commonmark.renderer.html.HtmlRenderer
 
 class DefaultDocumentContentFactory @Inject constructor() {
     fun create(type: DocumentType, title: String): String = when (type) {
@@ -163,10 +169,17 @@ class SaveEditableDocumentUseCase @Inject constructor(
     private val timeProvider: TimeProvider,
     private val dispatcherProvider: DispatcherProvider
 ) {
-    suspend operator fun invoke(documentId: String, content: String): AppResult<DoclyDocument> {
+    suspend operator fun invoke(
+        documentId: String,
+        content: String,
+        expectedUpdatedAt: Long? = null
+    ): AppResult<DoclyDocument> {
         val document = when (val documentResult = documentRepository.getDocument(documentId.trim())) {
             is AppResult.Error -> return documentResult
             is AppResult.Success -> documentResult.data ?: return validationError("Document not found.")
+        }
+        if (expectedUpdatedAt != null && document.updatedAt != expectedUpdatedAt) {
+            return validationError("This document changed elsewhere. Reload before saving.")
         }
         val file = when (val fileResult = document.editableInternalFile()) {
             is AppResult.Error -> return fileResult
@@ -176,7 +189,7 @@ class SaveEditableDocumentUseCase @Inject constructor(
         val updatedDocument = withContext(dispatcherProvider.io) {
             try {
                 file.parentFile?.mkdirs()
-                file.writeText(content, Charsets.UTF_8)
+                file.writeTextAtomically(content)
                 AppResult.Success(
                     document.copy(
                         fileSize = file.length(),
@@ -199,6 +212,36 @@ class SaveEditableDocumentUseCase @Inject constructor(
             is AppResult.Success -> AppResult.Success(savedDocument)
         }
     }
+}
+
+class RenderEditablePreviewUseCase @Inject constructor(private val dispatcherProvider: DispatcherProvider) {
+    private val extensions = listOf(TablesExtension.create())
+    private val parser = Parser.builder()
+        .extensions(extensions)
+        .build()
+    private val htmlRenderer = HtmlRenderer.builder()
+        .extensions(extensions)
+        .escapeHtml(true)
+        .sanitizeUrls(true)
+        .build()
+
+    suspend operator fun invoke(type: DocumentType, content: String, title: String): AppResult<RenderedHtmlDocument> =
+        withContext(dispatcherProvider.default) {
+            try {
+                val html = when (type) {
+                    DocumentType.MARKDOWN -> htmlRenderer.render(parser.parse(content)).wrapPreviewHtml()
+                    DocumentType.HTML -> content.asPdfHtmlDocument()
+                    else -> return@withContext validationError("Preview is not available for this document type.")
+                }
+                AppResult.Success(RenderedHtmlDocument(html = html))
+            } catch (throwable: Throwable) {
+                AppResult.Error(
+                    message = "Could not render preview.",
+                    category = AppErrorCategory.PROCESSING,
+                    throwable = throwable
+                )
+            }
+        }
 }
 
 class CreatePdfFromTextDocumentUseCase @Inject constructor(
@@ -378,6 +421,48 @@ private fun String.asPdfHtmlDocument(): String = if (contains("<html", ignoreCas
     """.trimIndent()
 }
 
+private fun String.wrapPreviewHtml(): String = """
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body {
+            font-family: sans-serif;
+            color: #202124;
+            background: #ffffff;
+            margin: 0;
+            padding: 18px;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+          }
+          th, td {
+            border: 1px solid #d0d7de;
+            padding: 6px 8px;
+            vertical-align: top;
+          }
+          pre, code {
+            background: #f6f8fa;
+            border-radius: 4px;
+          }
+          pre {
+            overflow-x: auto;
+            padding: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        $this
+      </body>
+    </html>
+""".trimIndent()
+
 private fun validationError(message: String): AppResult.Error = AppResult.Error(
     message = message,
     category = AppErrorCategory.VALIDATION
@@ -386,6 +471,28 @@ private fun validationError(message: String): AppResult.Error = AppResult.Error(
 private inline fun <T, R> AppResult<T>.mapSuccess(transform: (T) -> R): AppResult<R> = when (this) {
     is AppResult.Error -> this
     is AppResult.Success -> AppResult.Success(transform(data))
+}
+
+private fun File.writeTextAtomically(content: String) {
+    val parent = parentFile ?: throw IllegalStateException("Document file has no parent directory.")
+    val tempFile = File.createTempFile(nameWithoutExtension, ".tmp", parent)
+    try {
+        tempFile.writeText(content, Charsets.UTF_8)
+        try {
+            Files.move(
+                tempFile.toPath(),
+                toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (atomicMoveFailure: Throwable) {
+            Files.move(tempFile.toPath(), toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        if (tempFile.exists()) {
+            tempFile.delete()
+        }
+    }
 }
 
 private fun String.escapeHtml(): String = buildString(length) {

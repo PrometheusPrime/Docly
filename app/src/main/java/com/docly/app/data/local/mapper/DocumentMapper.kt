@@ -26,7 +26,8 @@ fun DocumentEntity.toDomain(): DoclyDocument = DoclyDocument(
     lastOpenedAt = lastOpenedAt,
     isFavorite = isFavorite,
     isScanned = isScanned,
-    ocrStatus = ocrStatus.toOcrStatus()
+    ocrStatus = ocrStatus.toOcrStatus(),
+    sourceScanSessionId = sourceScanSessionId
 )
 
 fun DoclyDocument.toEntity(): DocumentEntity {
@@ -49,7 +50,8 @@ fun DoclyDocument.toEntity(): DocumentEntity {
         lastOpenedAt = lastOpenedAt,
         isFavorite = isFavorite,
         isScanned = isScanned,
-        ocrStatus = ocrStatus.name
+        ocrStatus = ocrStatus.name,
+        sourceScanSessionId = sourceScanSessionId
     )
 }
 

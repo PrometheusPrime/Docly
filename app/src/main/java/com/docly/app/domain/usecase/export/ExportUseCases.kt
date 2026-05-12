@@ -214,7 +214,8 @@ class ExportDocumentUseCase @Inject constructor(
             lastOpenedAt = null,
             isFavorite = false,
             isScanned = true,
-            ocrStatus = OcrStatus.NOT_STARTED
+            ocrStatus = OcrStatus.NOT_STARTED,
+            sourceScanSessionId = session.id
         )
     }
 

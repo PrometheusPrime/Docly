@@ -36,6 +36,9 @@ import com.docly.app.feature.library.LibraryViewModel
 import com.docly.app.feature.metadata.MetadataScreen
 import com.docly.app.feature.metadata.MetadataUiEffect
 import com.docly.app.feature.metadata.MetadataViewModel
+import com.docly.app.feature.pdfpageeditor.PdfPageEditorScreen
+import com.docly.app.feature.pdfpageeditor.PdfPageEditorUiEffect
+import com.docly.app.feature.pdfpageeditor.PdfPageEditorViewModel
 import com.docly.app.feature.placeholder.PlaceholderScreen
 import com.docly.app.feature.reader.ReaderScreen
 import com.docly.app.feature.reader.ReaderViewModel
@@ -269,6 +272,14 @@ fun AppNavHost(
                             navController.navigate(ReaderRoute(effect.documentId))
                         }
 
+                        is LibraryUiEffect.OpenEditor -> {
+                            navController.navigate(DocumentEditorRoute(effect.documentId))
+                        }
+
+                        is LibraryUiEffect.OpenPdfPageEditor -> {
+                            navController.navigate(PdfPageEditorRoute(effect.documentId))
+                        }
+
                         is LibraryUiEffect.ShareDocument -> {
                             context.startDocumentIntent(
                                 intentResult = documentIntentFactory.createShareIntent(
@@ -356,6 +367,10 @@ fun AppNavHost(
                             navController.navigate(ReaderRoute(effect.documentId))
                         }
 
+                        DocumentEditorUiEffect.NavigateBack -> {
+                            navController.popBackStack()
+                        }
+
                         is DocumentEditorUiEffect.ShowToast -> {
                             Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
                         }
@@ -363,6 +378,30 @@ fun AppNavHost(
                 }
             }
             DocumentEditorScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
+                onNavigateBack = navController::popBackStack
+            )
+        }
+
+        composable<PdfPageEditorRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<PdfPageEditorViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is PdfPageEditorUiEffect.NavigateToReader -> {
+                            navController.navigate(ReaderRoute(effect.documentId))
+                        }
+
+                        is PdfPageEditorUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            PdfPageEditorScreen(
                 uiState = uiState,
                 onEvent = viewModel::onEvent,
                 onNavigateBack = navController::popBackStack

@@ -68,6 +68,7 @@ class LibraryViewModel @Inject constructor(
             LibraryUiEvent.OnFavoriteFilterToggled -> toggleFavoriteFilter()
             is LibraryUiEvent.OnViewModeChanged -> updateViewMode(event.viewMode)
             is LibraryUiEvent.OnOpenDocumentClicked -> openDocument(event.documentId)
+            is LibraryUiEvent.OnEditDocumentClicked -> editDocument(event.documentId)
             is LibraryUiEvent.OnShareDocumentClicked -> shareDocument(event.documentId)
             is LibraryUiEvent.OnFavoriteDocumentClicked -> toggleFavorite(event.documentId)
             is LibraryUiEvent.OnRenameDocumentClicked -> selectDocumentForRename(event.documentId)
@@ -243,6 +244,31 @@ class LibraryViewModel @Inject constructor(
                     mimeType = document.mimeType
                 )
             )
+        }
+    }
+
+    private fun editDocument(documentId: String) {
+        val document = allDocuments.findById(documentId)
+        viewModelScope.launch {
+            if (document == null) {
+                _uiEffect.emit(LibraryUiEffect.ShowToast("Document not found."))
+                return@launch
+            }
+            when (document.type) {
+                DocumentType.TXT,
+                DocumentType.MARKDOWN,
+                DocumentType.HTML -> _uiEffect.emit(LibraryUiEffect.OpenEditor(document.id))
+
+                DocumentType.PDF -> {
+                    if (document.sourceScanSessionId.isNullOrBlank()) {
+                        _uiEffect.emit(LibraryUiEffect.ShowToast("Only Docly-created scan PDFs can use page tools."))
+                    } else {
+                        _uiEffect.emit(LibraryUiEffect.OpenPdfPageEditor(document.id))
+                    }
+                }
+
+                else -> _uiEffect.emit(LibraryUiEffect.ShowToast("This document type cannot be edited yet."))
+            }
         }
     }
 

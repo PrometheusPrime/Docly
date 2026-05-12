@@ -1,10 +1,20 @@
 package com.docly.app.domain.capability
 
+import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentCapabilities
 import com.docly.app.domain.model.DocumentType
 import javax.inject.Inject
 
 class DocumentCapabilityResolver @Inject constructor() {
+    fun resolve(document: DoclyDocument): DocumentCapabilities {
+        val baseCapabilities = resolve(document.type)
+        return if (document.type == DocumentType.PDF && !document.sourceScanSessionId.isNullOrBlank()) {
+            baseCapabilities.copy(canManagePages = true)
+        } else {
+            baseCapabilities
+        }
+    }
+
     fun resolve(type: DocumentType): DocumentCapabilities = when (type) {
         DocumentType.PDF -> DocumentCapabilities(
             canView = true,

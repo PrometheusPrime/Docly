@@ -16,6 +16,7 @@ import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.usecase.create.CreatePdfFromTextDocumentUseCase
 import com.docly.app.domain.usecase.create.LoadEditableDocumentUseCase
+import com.docly.app.domain.usecase.create.RenderEditablePreviewUseCase
 import com.docly.app.domain.usecase.create.SaveEditableDocumentUseCase
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -72,7 +74,7 @@ class DocumentEditorViewModelTest {
     }
 
     @Test
-    fun exportPdfRequiresSavedContentAndNavigatesToReader() = runTest(mainDispatcherRule.testDispatcher) {
+    fun autosavePersistsContentAfterDelayWithoutToast() = runTest(mainDispatcherRule.testDispatcher) {
         val textFile = temporaryFolder.newFile("notes.txt").apply {
             writeText("Original", Charsets.UTF_8)
         }
@@ -83,24 +85,80 @@ class DocumentEditorViewModelTest {
         viewModel.onEvent(DocumentEditorUiEvent.OnStart)
         advanceUntilIdle()
 
-        val dirtyEffect = async { viewModel.uiEffect.first() }
-        viewModel.onEvent(DocumentEditorUiEvent.OnContentChanged("Unsaved"))
-        viewModel.onEvent(DocumentEditorUiEvent.OnExportPdfClicked)
+        viewModel.onEvent(DocumentEditorUiEvent.OnContentChanged("Autosaved"))
+        advanceTimeBy(1499L)
+        assertEquals("Original", textFile.readText(Charsets.UTF_8))
+
+        advanceTimeBy(1L)
         advanceUntilIdle()
-        assertEquals(
-            DocumentEditorUiEffect.ShowToast("Save changes before creating a PDF."),
-            dirtyEffect.await()
+
+        assertEquals("Autosaved", textFile.readText(Charsets.UTF_8))
+        assertFalse(viewModel.uiState.value.isDirty)
+        assertEquals(DocumentEditorSaveStatus.SAVED, viewModel.uiState.value.saveStatus)
+    }
+
+    @Test
+    fun searchCountsAndCyclesMatches() = runTest(mainDispatcherRule.testDispatcher) {
+        val textFile = temporaryFolder.newFile("notes.txt").apply {
+            writeText("Alpha beta alpha", Charsets.UTF_8)
+        }
+        val repository = FakeDocumentRepository(
+            listOf(document(id = "notes", path = textFile.absolutePath, type = DocumentType.TXT))
         )
-
-        val saveEffect = async { viewModel.uiEffect.first() }
-        viewModel.onEvent(DocumentEditorUiEvent.OnSaveClicked)
+        val viewModel = viewModel(repository = repository)
+        viewModel.onEvent(DocumentEditorUiEvent.OnStart)
         advanceUntilIdle()
-        assertEquals(DocumentEditorUiEffect.ShowToast("Document saved."), saveEffect.await())
 
+        viewModel.onEvent(DocumentEditorUiEvent.OnSearchQueryChanged("alpha"))
+
+        assertEquals(2, viewModel.uiState.value.searchResultCount)
+        assertEquals("1 of 2", viewModel.uiState.value.searchSummary)
+
+        viewModel.onEvent(DocumentEditorUiEvent.OnNextSearchResultClicked)
+        assertEquals("2 of 2", viewModel.uiState.value.searchSummary)
+
+        viewModel.onEvent(DocumentEditorUiEvent.OnNextSearchResultClicked)
+        assertEquals("1 of 2", viewModel.uiState.value.searchSummary)
+    }
+
+    @Test
+    fun markdownPreviewRendersUnsavedSource() = runTest(mainDispatcherRule.testDispatcher) {
+        val markdownFile = temporaryFolder.newFile("notes.md").apply {
+            writeText("# Original", Charsets.UTF_8)
+        }
+        val repository = FakeDocumentRepository(
+            listOf(document(id = "notes", path = markdownFile.absolutePath, type = DocumentType.MARKDOWN))
+        )
+        val viewModel = viewModel(repository = repository)
+        viewModel.onEvent(DocumentEditorUiEvent.OnStart)
+        advanceUntilIdle()
+
+        viewModel.onEvent(DocumentEditorUiEvent.OnContentChanged("# Preview"))
+        viewModel.onEvent(DocumentEditorUiEvent.OnEditorModeChanged(DocumentEditorMode.PREVIEW))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.previewHtml.contains("<h1>Preview</h1>"))
+        assertEquals(DocumentEditorMode.PREVIEW, viewModel.uiState.value.editorMode)
+    }
+
+    @Test
+    fun exportPdfSavesDirtyContentAndNavigatesToReader() = runTest(mainDispatcherRule.testDispatcher) {
+        val textFile = temporaryFolder.newFile("notes.txt").apply {
+            writeText("Original", Charsets.UTF_8)
+        }
+        val repository = FakeDocumentRepository(
+            listOf(document(id = "notes", path = textFile.absolutePath, type = DocumentType.TXT))
+        )
+        val viewModel = viewModel(repository = repository)
+        viewModel.onEvent(DocumentEditorUiEvent.OnStart)
+        advanceUntilIdle()
+
+        viewModel.onEvent(DocumentEditorUiEvent.OnContentChanged("Unsaved"))
         val exportEffects = async { viewModel.uiEffect.take(2).toList() }
         viewModel.onEvent(DocumentEditorUiEvent.OnExportPdfClicked)
         advanceUntilIdle()
 
+        assertEquals("Unsaved", textFile.readText(Charsets.UTF_8))
         val emittedEffects = exportEffects.await()
         assertEquals(DocumentEditorUiEffect.ShowToast("PDF created."), emittedEffects.first())
         assertEquals(DocumentEditorUiEffect.NavigateToReader("pdf-id"), emittedEffects.last())
@@ -125,7 +183,8 @@ class DocumentEditorViewModelTest {
                 idProvider = SequenceIdProvider(listOf("pdf-id")),
                 timeProvider = FixedTimeProvider(300L),
                 dispatcherProvider = dispatcherProvider
-            )
+            ),
+            renderEditablePreviewUseCase = RenderEditablePreviewUseCase(dispatcherProvider)
         )
     }
 

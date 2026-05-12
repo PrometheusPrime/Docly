@@ -29,7 +29,8 @@ class DocumentMapperTest {
             lastOpenedAt = 3L,
             isFavorite = true,
             isScanned = false,
-            ocrStatus = OcrStatus.NOT_STARTED.name
+            ocrStatus = OcrStatus.NOT_STARTED.name,
+            sourceScanSessionId = "scan-session"
         )
 
         val domain = entity.toDomain()
@@ -37,6 +38,7 @@ class DocumentMapperTest {
         assertEquals("Paper", domain.name)
         assertEquals(DocumentType.PDF, domain.type)
         assertEquals(FileRef.InternalFile("/files/paper.pdf"), domain.fileRef)
+        assertEquals("scan-session", domain.sourceScanSessionId)
         assertEquals(entity, domain.toEntity())
     }
 

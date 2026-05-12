@@ -35,6 +35,9 @@ data class ReaderRoute(val documentId: String)
 data class DocumentEditorRoute(val documentId: String)
 
 @Serializable
+data class PdfPageEditorRoute(val documentId: String)
+
+@Serializable
 data class EditorRoute(val sessionId: String)
 
 @Serializable

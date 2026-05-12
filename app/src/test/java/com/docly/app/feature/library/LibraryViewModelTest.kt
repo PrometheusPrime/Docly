@@ -125,6 +125,43 @@ class LibraryViewModelTest {
         assertEquals(LibraryUiEffect.ShowToast("Document imported."), effect.await())
     }
 
+    @Test
+    fun editRoutesTextDocumentsToEditorAndScannedPdfsToPageTools() = runTest {
+        val textDocument = sampleDocument(id = "text", type = DocumentType.MARKDOWN)
+        val scannedPdf = sampleDocument(id = "scan", sourceScanSessionId = "session-id")
+        val viewModel = viewModel(documents = listOf(textDocument, scannedPdf))
+        advanceUntilIdle()
+
+        val textEffect = async { viewModel.uiEffect.first() }
+        runCurrent()
+        viewModel.onEvent(LibraryUiEvent.OnEditDocumentClicked(textDocument.id))
+        advanceUntilIdle()
+        assertEquals(LibraryUiEffect.OpenEditor(textDocument.id), textEffect.await())
+
+        val pdfEffect = async { viewModel.uiEffect.first() }
+        runCurrent()
+        viewModel.onEvent(LibraryUiEvent.OnEditDocumentClicked(scannedPdf.id))
+        advanceUntilIdle()
+        assertEquals(LibraryUiEffect.OpenPdfPageEditor(scannedPdf.id), pdfEffect.await())
+    }
+
+    @Test
+    fun editImportedPdfShowsUnsupportedPageToolsMessage() = runTest {
+        val document = sampleDocument()
+        val viewModel = viewModel(documents = listOf(document))
+        advanceUntilIdle()
+        val effect = async { viewModel.uiEffect.first() }
+        runCurrent()
+
+        viewModel.onEvent(LibraryUiEvent.OnEditDocumentClicked(document.id))
+        advanceUntilIdle()
+
+        assertEquals(
+            LibraryUiEffect.ShowToast("Only Docly-created scan PDFs can use page tools."),
+            effect.await()
+        )
+    }
+
     private fun viewModel(
         documents: List<DoclyDocument> = emptyList(),
         repository: FakeDocumentRepository = FakeDocumentRepository(documents)
@@ -144,7 +181,8 @@ class LibraryViewModelTest {
         name: String = "Document",
         type: DocumentType = DocumentType.PDF,
         updatedAt: Long = 1L,
-        isFavorite: Boolean = false
+        isFavorite: Boolean = false,
+        sourceScanSessionId: String? = null
     ): DoclyDocument = DoclyDocument(
         id = id,
         name = name,
@@ -155,7 +193,8 @@ class LibraryViewModelTest {
         fileSize = 10L,
         createdAt = 1L,
         updatedAt = updatedAt,
-        isFavorite = isFavorite
+        isFavorite = isFavorite,
+        sourceScanSessionId = sourceScanSessionId
     )
 
     private class FakeDocumentRepository(documents: List<DoclyDocument> = emptyList()) : DocumentRepository {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -379,6 +380,12 @@ private fun LibraryDocumentRow(document: DoclyDocument, onEvent: (LibraryUiEvent
             },
             fourth = { actionModifier ->
                 Row(modifier = actionModifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    IconButton(
+                        onClick = { onEvent(LibraryUiEvent.OnEditDocumentClicked(document.id)) },
+                        modifier = Modifier.testTag(DoclyTestTags.LIBRARY_EDIT_ACTION)
+                    ) {
+                        Icon(imageVector = Icons.Filled.Create, contentDescription = document.editActionLabel())
+                    }
                     IconButton(onClick = { onEvent(LibraryUiEvent.OnRenameDocumentClicked(document.id)) }) {
                         Icon(imageVector = Icons.Filled.Edit, contentDescription = "Rename")
                     }
@@ -393,6 +400,8 @@ private fun LibraryDocumentRow(document: DoclyDocument, onEvent: (LibraryUiEvent
         )
     }
 }
+
+private fun DoclyDocument.editActionLabel(): String = if (type == DocumentType.PDF) "Page tools" else "Edit"
 
 @Composable
 private fun LibraryDocumentThumbnail(document: DoclyDocument) {

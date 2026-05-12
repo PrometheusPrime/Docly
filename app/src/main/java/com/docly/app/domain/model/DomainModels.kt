@@ -16,7 +16,8 @@ data class DoclyDocument(
     val lastOpenedAt: Long? = null,
     val isFavorite: Boolean = false,
     val isScanned: Boolean = false,
-    val ocrStatus: OcrStatus = OcrStatus.NOT_STARTED
+    val ocrStatus: OcrStatus = OcrStatus.NOT_STARTED,
+    val sourceScanSessionId: String? = null
 )
 
 enum class DocumentType {
@@ -52,6 +53,7 @@ data class DocumentCapabilities(
     val canAnnotate: Boolean,
     val canConvert: Boolean,
     val supportedOutputs: Set<DocumentType> = emptySet(),
+    val canManagePages: Boolean = false,
     val isSimplifiedView: Boolean = false,
     val limitationMessage: String? = null
 )
@@ -263,12 +265,13 @@ fun SavedDocument.toDoclyDocument(updatedAt: Long = createdAt): DoclyDocument = 
     lastOpenedAt = null,
     isFavorite = false,
     isScanned = true,
-    ocrStatus = ocrStatus
+    ocrStatus = ocrStatus,
+    sourceScanSessionId = sessionId.takeIf { it.isNotBlank() }
 )
 
 fun DoclyDocument.toSavedDocumentCompat(): SavedDocument = SavedDocument(
     id = id,
-    sessionId = "",
+    sessionId = sourceScanSessionId.orEmpty(),
     title = name,
     pdfPath = (fileRef as? FileRef.InternalFile)?.path.orEmpty(),
     thumbnailPath = thumbnailPath,

@@ -26,7 +26,13 @@ object RoomMigrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE documents ADD COLUMN sourceScanSessionId TEXT")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
     private fun dropLegacyTables(connection: SQLiteConnection) {
         listOf(

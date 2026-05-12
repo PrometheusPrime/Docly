@@ -111,6 +111,26 @@ class CreateDocumentUseCasesTest {
     }
 
     @Test
+    fun saveEditableDocumentRejectsStaleExpectedUpdatedAt() = runTest(dispatcher) {
+        val textFile = temporaryFolder.newFile("notes.txt").apply {
+            writeText("Original", Charsets.UTF_8)
+        }
+        val document = document(id = "notes", path = textFile.absolutePath, type = DocumentType.TXT)
+        val repository = FakeDocumentRepository(listOf(document.copy(updatedAt = 300L)))
+        val saveUseCase = SaveEditableDocumentUseCase(
+            documentRepository = repository,
+            timeProvider = FixedTimeProvider(400L),
+            dispatcherProvider = dispatcherProvider
+        )
+
+        val result = saveUseCase(documentId = "notes", content = "Updated", expectedUpdatedAt = 100L)
+
+        assertTrue(result is AppResult.Error)
+        assertEquals("This document changed elsewhere. Reload before saving.", (result as AppResult.Error).message)
+        assertEquals("Original", textFile.readText(Charsets.UTF_8))
+    }
+
+    @Test
     fun createPdfFromTextDocumentRendersEscapedHtmlAndRegistersPdf() = runTest(dispatcher) {
         val textFile = temporaryFolder.newFile("notes.txt").apply {
             writeText("A < B", Charsets.UTF_8)

@@ -221,7 +221,8 @@ class SaveScannedOutputUseCase @Inject constructor(
                 type = DocumentType.PDF,
                 mimeType = PDF_MIME_TYPE,
                 filePath = pdfPath,
-                pageCount = pages.size
+                pageCount = pages.size,
+                sourceScanSessionId = session.id
             )
             when (val saveResult = documentRepository.upsertDocument(document)) {
                 is AppResult.Error -> {
@@ -356,7 +357,8 @@ class SaveScannedOutputUseCase @Inject constructor(
         mimeType: String,
         filePath: String,
         pageCount: Int,
-        thumbnailPath: String? = null
+        thumbnailPath: String? = null,
+        sourceScanSessionId: String? = null
     ): DoclyDocument {
         val now = timeProvider.now()
         return DoclyDocument(
@@ -375,7 +377,8 @@ class SaveScannedOutputUseCase @Inject constructor(
             lastOpenedAt = null,
             isFavorite = false,
             isScanned = true,
-            ocrStatus = OcrStatus.NOT_STARTED
+            ocrStatus = OcrStatus.NOT_STARTED,
+            sourceScanSessionId = sourceScanSessionId
         )
     }
 
