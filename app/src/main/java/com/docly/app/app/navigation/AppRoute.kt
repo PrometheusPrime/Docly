@@ -32,6 +32,9 @@ data class ReviewRoute(val sessionId: String)
 data class ReaderRoute(val documentId: String)
 
 @Serializable
+data class DocumentEditorRoute(val documentId: String)
+
+@Serializable
 data class EditorRoute(val sessionId: String)
 
 @Serializable

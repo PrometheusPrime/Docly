@@ -17,6 +17,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.docly.app.core.file.DocumentIntentFactory
 import com.docly.app.core.result.AppResult
+import com.docly.app.feature.create.CreateScreen
+import com.docly.app.feature.create.CreateUiEffect
+import com.docly.app.feature.create.CreateViewModel
+import com.docly.app.feature.documenteditor.DocumentEditorScreen
+import com.docly.app.feature.documenteditor.DocumentEditorUiEffect
+import com.docly.app.feature.documenteditor.DocumentEditorViewModel
 import com.docly.app.feature.editor.EditorScreen
 import com.docly.app.feature.editor.EditorUiEffect
 import com.docly.app.feature.editor.EditorViewModel
@@ -309,10 +315,56 @@ fun AppNavHost(
             )
         }
 
-        composable<CreateRoute> {
-            PlaceholderScreen(
-                title = "Create",
-                message = "TXT, Markdown, and HTML creation are planned after the document foundation.",
+        composable<CreateRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<CreateViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is CreateUiEffect.NavigateToEditor -> {
+                            navController.navigate(DocumentEditorRoute(effect.documentId))
+                        }
+
+                        CreateUiEffect.NavigateToScanner -> {
+                            navController.navigate(ScannerRoute()) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        is CreateUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            CreateScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
+                onNavigateBack = navController::popBackStack
+            )
+        }
+
+        composable<DocumentEditorRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<DocumentEditorViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is DocumentEditorUiEffect.NavigateToReader -> {
+                            navController.navigate(ReaderRoute(effect.documentId))
+                        }
+
+                        is DocumentEditorUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            DocumentEditorScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
                 onNavigateBack = navController::popBackStack
             )
         }
