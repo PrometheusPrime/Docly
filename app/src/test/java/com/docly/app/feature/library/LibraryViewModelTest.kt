@@ -6,6 +6,7 @@ import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentSource
 import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.FileRef
+import com.docly.app.domain.reader.DocumentOpenResolver
 import com.docly.app.domain.repository.DocumentRepository
 import com.docly.app.domain.usecase.library.DeleteDocumentUseCase
 import com.docly.app.domain.usecase.library.ImportDocumentUseCase
@@ -81,7 +82,7 @@ class LibraryViewModelTest {
         runCurrent()
         viewModel.onEvent(LibraryUiEvent.OnOpenDocumentClicked(document.id))
         advanceUntilIdle()
-        assertEquals(LibraryUiEffect.OpenDocument("/docs/document-id.pdf", "application/pdf"), openEffect.await())
+        assertEquals(LibraryUiEffect.OpenReader(document.id), openEffect.await())
         assertEquals(listOf(document.id), repository.lastOpenedIds)
 
         val shareEffect = async { viewModel.uiEffect.first() }
@@ -135,7 +136,7 @@ class LibraryViewModelTest {
         deleteDocumentUseCase = DeleteDocumentUseCase(repository),
         toggleFavoriteDocumentUseCase = ToggleFavoriteDocumentUseCase(repository),
         updateLastOpenedUseCase = UpdateLastOpenedUseCase(repository),
-        capabilityResolver = DocumentCapabilityResolver()
+        documentOpenResolver = DocumentOpenResolver(DocumentCapabilityResolver())
     )
 
     private fun sampleDocument(

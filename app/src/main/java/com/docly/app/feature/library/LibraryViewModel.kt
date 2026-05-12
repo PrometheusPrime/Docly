@@ -4,12 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.toUserMessage
-import com.docly.app.domain.capability.DocumentCapabilityResolver
 import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.model.SortMode
 import com.docly.app.domain.model.ViewMode
+import com.docly.app.domain.reader.DocumentOpenResolver
+import com.docly.app.domain.reader.DocumentOpenTarget
 import com.docly.app.domain.usecase.library.DeleteDocumentUseCase
 import com.docly.app.domain.usecase.library.ImportDocumentUseCase
 import com.docly.app.domain.usecase.library.ObserveDocumentsUseCase
@@ -39,7 +40,7 @@ class LibraryViewModel @Inject constructor(
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
     private val toggleFavoriteDocumentUseCase: ToggleFavoriteDocumentUseCase,
     private val updateLastOpenedUseCase: UpdateLastOpenedUseCase,
-    private val capabilityResolver: DocumentCapabilityResolver
+    private val documentOpenResolver: DocumentOpenResolver
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -200,17 +201,26 @@ class LibraryViewModel @Inject constructor(
                 _uiEffect.emit(LibraryUiEffect.ShowToast("Document not found."))
                 return@launch
             }
-            if (!capabilityResolver.resolve(document.type).canView) {
-                _uiEffect.emit(LibraryUiEffect.ShowToast("Docly cannot open this file type yet."))
-                return@launch
+            when (val target = documentOpenResolver.resolve(document)) {
+                is DocumentOpenTarget.ExternalViewer -> {
+                    updateLastOpenedUseCase(document.id)
+                    _uiEffect.emit(
+                        LibraryUiEffect.OpenDocument(
+                            filePath = target.filePath,
+                            mimeType = target.mimeType
+                        )
+                    )
+                }
+
+                is DocumentOpenTarget.Reader -> {
+                    updateLastOpenedUseCase(document.id)
+                    _uiEffect.emit(LibraryUiEffect.OpenReader(target.documentId))
+                }
+
+                is DocumentOpenTarget.Unsupported -> {
+                    _uiEffect.emit(LibraryUiEffect.ShowToast(target.message))
+                }
             }
-            val path = document.internalPathOrNull()
-            if (path == null) {
-                _uiEffect.emit(LibraryUiEffect.ShowToast("Document file not found."))
-                return@launch
-            }
-            updateLastOpenedUseCase(document.id)
-            _uiEffect.emit(LibraryUiEffect.OpenDocument(filePath = path, mimeType = document.mimeType))
         }
     }
 

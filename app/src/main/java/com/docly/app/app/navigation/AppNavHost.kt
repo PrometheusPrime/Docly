@@ -31,6 +31,8 @@ import com.docly.app.feature.metadata.MetadataScreen
 import com.docly.app.feature.metadata.MetadataUiEffect
 import com.docly.app.feature.metadata.MetadataViewModel
 import com.docly.app.feature.placeholder.PlaceholderScreen
+import com.docly.app.feature.reader.ReaderScreen
+import com.docly.app.feature.reader.ReaderViewModel
 import com.docly.app.feature.scanner.ScannerScreen
 import com.docly.app.feature.scanner.ScannerUiEffect
 import com.docly.app.feature.scanner.ScannerViewModel
@@ -257,6 +259,10 @@ fun AppNavHost(
                             )
                         }
 
+                        is LibraryUiEffect.OpenReader -> {
+                            navController.navigate(ReaderRoute(effect.documentId))
+                        }
+
                         is LibraryUiEffect.ShareDocument -> {
                             context.startDocumentIntent(
                                 intentResult = documentIntentFactory.createShareIntent(
@@ -282,6 +288,16 @@ fun AppNavHost(
                         launchSingleTop = true
                     }
                 }
+            )
+        }
+
+        composable<ReaderRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<ReaderViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            ReaderScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
+                onNavigateBack = navController::popBackStack
             )
         }
 

@@ -1,0 +1,114 @@
+package com.docly.app.core.reader
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import com.docly.app.core.dispatchers.DispatcherProvider
+import com.docly.app.core.result.AppErrorCategory
+import com.docly.app.core.result.AppResult
+import com.docly.app.domain.model.FileRef
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import javax.inject.Inject
+import kotlinx.coroutines.withContext
+
+class AndroidPdfReaderEngine @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+    private val dispatcherProvider: DispatcherProvider
+) : PdfReaderEngine {
+    override suspend fun open(fileRef: FileRef): AppResult<PdfDocumentInfo> = withContext(dispatcherProvider.io) {
+        readerResult {
+            fileRef.openPdfRenderer().use { renderer ->
+                PdfDocumentInfo(pageCount = renderer.pageCount)
+            }
+        }
+    }
+
+    override suspend fun renderPage(
+        documentId: String,
+        fileRef: FileRef,
+        pageIndex: Int,
+        widthPx: Int,
+        zoom: Float
+    ): AppResult<RenderedPdfPage> = withContext(dispatcherProvider.io) {
+        readerResult {
+            val targetWidth = widthPx.coerceAtLeast(MIN_RENDER_WIDTH_PX)
+            val safeZoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+            val cacheFile = cacheFile(
+                documentId = documentId,
+                pageIndex = pageIndex,
+                widthPx = targetWidth,
+                zoom = safeZoom
+            )
+            if (cacheFile.isFile) {
+                return@readerResult RenderedPdfPage(
+                    pageIndex = pageIndex,
+                    width = targetWidth,
+                    height = 0,
+                    imagePath = cacheFile.absolutePath
+                )
+            }
+
+            fileRef.openPdfRenderer().use { renderer ->
+                if (pageIndex !in 0 until renderer.pageCount) {
+                    throw ReaderFailure("PDF page is not available.", AppErrorCategory.VALIDATION)
+                }
+
+                renderer.openPage(pageIndex).use { page ->
+                    val renderWidth = (targetWidth * safeZoom).toInt().coerceAtLeast(MIN_RENDER_WIDTH_PX)
+                    val renderHeight = ((renderWidth.toFloat() / page.width.toFloat()) * page.height.toFloat())
+                        .toInt()
+                        .coerceAtLeast(1)
+                    val bitmap = Bitmap.createBitmap(renderWidth, renderHeight, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    cacheFile.parentFile?.mkdirs()
+                    cacheFile.outputStream().use { output ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                    }
+                    bitmap.recycle()
+                    RenderedPdfPage(
+                        pageIndex = pageIndex,
+                        width = renderWidth,
+                        height = renderHeight,
+                        imagePath = cacheFile.absolutePath
+                    )
+                }
+            }
+        }
+    }
+
+    private fun FileRef.openPdfRenderer(): PdfRenderer {
+        val file = requireInternalFile()
+        val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return try {
+            PdfRenderer(descriptor)
+        } catch (throwable: Throwable) {
+            descriptor.close()
+            throw throwable
+        }
+    }
+
+    private fun cacheFile(documentId: String, pageIndex: Int, widthPx: Int, zoom: Float): File {
+        val cacheName = buildString {
+            append(documentId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }.ifBlank { "document" })
+            append("_p")
+            append(pageIndex)
+            append("_w")
+            append(widthPx)
+            append("_z")
+            append((zoom * 100).toInt())
+            append(".png")
+        }
+        return File(File(context.cacheDir, PDF_CACHE_DIRECTORY), cacheName)
+    }
+
+    private companion object {
+        const val PDF_CACHE_DIRECTORY = "reader/pdf"
+        const val MIN_RENDER_WIDTH_PX = 320
+        const val MIN_ZOOM = 0.75f
+        const val MAX_ZOOM = 3f
+    }
+}

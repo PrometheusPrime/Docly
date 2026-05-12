@@ -36,6 +36,7 @@ class DocumentFoundationTest {
         assertTrue(DocumentType.PDF in markdown.supportedOutputs)
 
         val docx = capabilityResolver.resolve(DocumentType.DOCX)
+        assertTrue(docx.canView)
         assertFalse(docx.canEdit)
         assertTrue(docx.isSimplifiedView)
 

@@ -51,23 +51,23 @@ class DocumentCapabilityResolver @Inject constructor() {
         )
 
         DocumentType.DOCX -> DocumentCapabilities(
-            canView = false,
+            canView = true,
             canCreate = false,
             canEdit = false,
             canAnnotate = false,
             canConvert = false,
             isSimplifiedView = true,
-            limitationMessage = "DOCX reading is planned after the core readers."
+            limitationMessage = DOCX_SIMPLIFIED_MESSAGE
         )
 
         DocumentType.XLSX -> DocumentCapabilities(
-            canView = false,
+            canView = true,
             canCreate = false,
             canEdit = false,
             canAnnotate = false,
             canConvert = false,
             isSimplifiedView = true,
-            limitationMessage = "XLSX reading is planned after the core readers."
+            limitationMessage = XLSX_SIMPLIFIED_MESSAGE
         )
 
         DocumentType.CSV -> DocumentCapabilities(
@@ -87,5 +87,12 @@ class DocumentCapabilityResolver @Inject constructor() {
             canConvert = false,
             limitationMessage = "Docly cannot open this file type yet."
         )
+    }
+
+    private companion object {
+        const val DOCX_SIMPLIFIED_MESSAGE =
+            "This DOCX is shown in a simplified view. Advanced layout, images, and comments are not shown."
+        const val XLSX_SIMPLIFIED_MESSAGE =
+            "This XLSX is shown as simplified tables. Formulas, charts, and formatting are not shown."
     }
 }

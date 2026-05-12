@@ -29,6 +29,9 @@ data object SettingsRoute
 data class ReviewRoute(val sessionId: String)
 
 @Serializable
+data class ReaderRoute(val documentId: String)
+
+@Serializable
 data class EditorRoute(val sessionId: String)
 
 @Serializable

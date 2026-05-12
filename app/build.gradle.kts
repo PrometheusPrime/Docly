@@ -132,6 +132,8 @@ dependencies {
     implementation(libs.mlkit.document.scanner)
     implementation(libs.opencv)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.commonmark)
+    implementation(libs.commonmark.ext.gfm.tables)
 
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.hilt.compiler)
