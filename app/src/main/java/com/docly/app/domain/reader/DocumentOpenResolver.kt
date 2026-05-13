@@ -24,6 +24,7 @@ class DocumentOpenResolver @Inject constructor(private val capabilityResolver: D
         return when (document.type) {
             DocumentType.PDF,
             DocumentType.TXT,
+            DocumentType.CSV,
             DocumentType.MARKDOWN,
             DocumentType.HTML,
             DocumentType.DOCX,
@@ -38,7 +39,6 @@ class DocumentOpenResolver @Inject constructor(private val capabilityResolver: D
                 }
             }
 
-            DocumentType.CSV,
             DocumentType.UNKNOWN -> DocumentOpenTarget.Unsupported(
                 capabilities.limitationMessage ?: "Docly cannot open this file type yet."
             )

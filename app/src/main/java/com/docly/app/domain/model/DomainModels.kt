@@ -76,6 +76,21 @@ data class Folder(val id: String, val name: String, val parentId: String?, val c
 
 data class RecentDocument(val documentId: String, val openedAt: Long)
 
+data class ConversionPair(val input: DocumentType, val output: DocumentType)
+
+data class ConversionRequest(
+    val inputDocumentId: String?,
+    val inputUri: String? = null,
+    val inputType: DocumentType,
+    val outputType: DocumentType,
+    val outputFileName: String,
+    val options: ConversionOptions = ConversionOptions()
+)
+
+data class ConversionOptions(val xlsxSheetIndex: Int = 0)
+
+data class ConversionResult(val job: ConversionJob, val outputDocument: DoclyDocument, val outputPath: String)
+
 enum class ConversionStatus {
     IDLE,
     QUEUED,

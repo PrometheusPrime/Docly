@@ -48,7 +48,13 @@ class DocumentFoundationTest {
         val docx = capabilityResolver.resolve(DocumentType.DOCX)
         assertTrue(docx.canView)
         assertFalse(docx.canEdit)
+        assertTrue(docx.canConvert)
+        assertTrue(DocumentType.TXT in docx.supportedOutputs)
         assertTrue(docx.isSimplifiedView)
+
+        val csv = capabilityResolver.resolve(DocumentType.CSV)
+        assertTrue(csv.canView)
+        assertFalse(csv.canEdit)
 
         val unknown = capabilityResolver.resolve(DocumentType.UNKNOWN)
         assertFalse(unknown.canView)

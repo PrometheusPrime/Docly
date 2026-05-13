@@ -2,9 +2,13 @@ package com.docly.app.domain.repository
 
 import com.docly.app.core.image.ScanQualityAssessment
 import com.docly.app.core.result.AppResult
+import com.docly.app.domain.model.ConversionJob
+import com.docly.app.domain.model.ConversionRequest
+import com.docly.app.domain.model.ConversionResult
 import com.docly.app.domain.model.DiagnosticEvent
 import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentMetadata
+import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.ImportedRawImage
 import com.docly.app.domain.model.OrphanCleanupResult
 import com.docly.app.domain.model.PageCorners
@@ -65,6 +69,14 @@ interface DocumentRepository {
         is AppResult.Error -> result
         is AppResult.Success -> AppResult.Success(result.data?.toSavedDocumentCompat())
     }
+}
+
+interface ConverterRepository {
+    fun getSupportedOutputs(inputType: DocumentType): List<DocumentType>
+    suspend fun createJob(request: ConversionRequest): AppResult<ConversionJob>
+    fun observeJob(jobId: String): Flow<ConversionJob?>
+    fun observeRecentJobs(limit: Int = 20): Flow<List<ConversionJob>>
+    suspend fun convert(request: ConversionRequest): AppResult<ConversionResult>
 }
 
 interface DiagnosticsRepository {

@@ -17,6 +17,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.docly.app.core.file.DocumentIntentFactory
 import com.docly.app.core.result.AppResult
+import com.docly.app.feature.converter.ConverterScreen
+import com.docly.app.feature.converter.ConverterUiEffect
+import com.docly.app.feature.converter.ConverterViewModel
 import com.docly.app.feature.create.CreateScreen
 import com.docly.app.feature.create.CreateUiEffect
 import com.docly.app.feature.create.CreateViewModel
@@ -76,7 +79,7 @@ fun AppNavHost(
                     }
                 },
                 onOpenCreate = { navController.navigate(CreateRoute) },
-                onOpenTools = { navController.navigate(ToolsRoute) },
+                onOpenTools = { navController.navigate(ConverterRoute) },
                 onOpenSettings = { navController.navigate(SettingsRoute) }
             )
         }
@@ -408,10 +411,51 @@ fun AppNavHost(
             )
         }
 
+        composable<ConverterRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<ConverterViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is ConverterUiEffect.NavigateToReader -> {
+                            navController.navigate(ReaderRoute(effect.documentId))
+                        }
+
+                        ConverterUiEffect.NavigateToDocuments -> {
+                            navController.navigate(LibraryRoute) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        is ConverterUiEffect.ShareDocument -> {
+                            context.startDocumentIntent(
+                                intentResult = documentIntentFactory.createShareIntent(
+                                    filePath = effect.filePath,
+                                    title = effect.title,
+                                    mimeType = effect.mimeType
+                                ),
+                                noHandlerMessage = "No app is available to share this document."
+                            )
+                        }
+
+                        is ConverterUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            ConverterScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
+                onNavigateBack = navController::popBackStack
+            )
+        }
+
         composable<ToolsRoute> {
             PlaceholderScreen(
                 title = "Tools",
-                message = "Conversion and PDF tools will appear here when those phases are implemented.",
+                message = "PDF tools are planned for a later phase.",
                 onNavigateBack = navController::popBackStack
             )
         }

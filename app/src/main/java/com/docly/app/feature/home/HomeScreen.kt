@@ -71,8 +71,8 @@ fun HomeScreen(
                         onClick = onOpenTools,
                         modifier = Modifier.weight(1f).doclyMinimumTouchTarget()
                     ) {
-                        Icon(imageVector = Icons.Filled.Settings, contentDescription = null)
-                        Text(text = "Tools")
+                        Icon(imageVector = Icons.Filled.Create, contentDescription = null)
+                        Text(text = "Convert")
                     }
                 }
                 OutlinedButton(

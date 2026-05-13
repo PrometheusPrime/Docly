@@ -20,6 +20,9 @@ data object SearchRoute
 data object CreateRoute
 
 @Serializable
+data object ConverterRoute
+
+@Serializable
 data object ToolsRoute
 
 @Serializable

@@ -25,6 +25,7 @@ coroutines = "1.10.2"
 serializationJson = "1.11.0"
 ktlintEngine = "1.8.0"
 commonmark = "0.28.0"
+jsoup = "1.22.2"
 
 # Tests
 junit = "4.13.2"
@@ -93,6 +94,7 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 commonmark = { group = "org.commonmark", name = "commonmark", version.ref = "commonmark" }
 commonmark-ext-gfm-tables = { group = "org.commonmark", name = "commonmark-ext-gfm-tables", version.ref = "commonmark" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 
 # Tests
 junit = { group = "junit", name = "junit", version.ref = "junit" }

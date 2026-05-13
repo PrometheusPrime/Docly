@@ -134,6 +134,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.commonmark)
     implementation(libs.commonmark.ext.gfm.tables)
+    implementation(libs.jsoup)
 
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.hilt.compiler)

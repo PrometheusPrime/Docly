@@ -126,7 +126,8 @@ class ReaderViewModel @Inject constructor(
         when (document.type) {
             DocumentType.PDF -> loadPdf(document)
 
-            DocumentType.TXT -> loadText(document)
+            DocumentType.TXT,
+            DocumentType.CSV -> loadText(document)
 
             DocumentType.MARKDOWN -> loadMarkdown(document)
 
@@ -136,7 +137,6 @@ class ReaderViewModel @Inject constructor(
 
             DocumentType.XLSX -> loadXlsx(document)
 
-            DocumentType.CSV,
             DocumentType.IMAGE,
             DocumentType.UNKNOWN -> showBlockingError(
                 capabilities.limitationMessage ?: "Docly cannot open this file type yet."

@@ -65,7 +65,8 @@ class DocumentCapabilityResolver @Inject constructor() {
             canCreate = false,
             canEdit = false,
             canAnnotate = false,
-            canConvert = false,
+            canConvert = true,
+            supportedOutputs = setOf(DocumentType.TXT, DocumentType.HTML),
             isSimplifiedView = true,
             limitationMessage = DOCX_SIMPLIFIED_MESSAGE
         )
@@ -75,18 +76,18 @@ class DocumentCapabilityResolver @Inject constructor() {
             canCreate = false,
             canEdit = false,
             canAnnotate = false,
-            canConvert = false,
+            canConvert = true,
+            supportedOutputs = setOf(DocumentType.CSV, DocumentType.TXT),
             isSimplifiedView = true,
             limitationMessage = XLSX_SIMPLIFIED_MESSAGE
         )
 
         DocumentType.CSV -> DocumentCapabilities(
-            canView = false,
+            canView = true,
             canCreate = false,
             canEdit = false,
             canAnnotate = false,
-            canConvert = false,
-            limitationMessage = "CSV support is planned with table tools."
+            canConvert = false
         )
 
         DocumentType.UNKNOWN -> DocumentCapabilities(

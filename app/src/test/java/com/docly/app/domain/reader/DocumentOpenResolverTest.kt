@@ -20,7 +20,8 @@ class DocumentOpenResolverTest {
             DocumentType.MARKDOWN,
             DocumentType.HTML,
             DocumentType.DOCX,
-            DocumentType.XLSX
+            DocumentType.XLSX,
+            DocumentType.CSV
         ).forEach { type ->
             assertEquals(DocumentOpenTarget.Reader("document-id"), resolver.resolve(document(type = type)))
         }
@@ -36,7 +37,6 @@ class DocumentOpenResolverTest {
 
     @Test
     fun unsupportedTypesResolveToMessage() {
-        assertTrue(resolver.resolve(document(type = DocumentType.CSV)) is DocumentOpenTarget.Unsupported)
         assertTrue(resolver.resolve(document(type = DocumentType.UNKNOWN)) is DocumentOpenTarget.Unsupported)
     }
 
