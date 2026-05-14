@@ -18,6 +18,7 @@ Docly MVP is a local-first Android document utility. Scanning, reading, creating
 - Sharing uses `FileProvider` content URIs with temporary read grants.
 - MVP should not request contacts, location, microphone, SMS, phone, notification, or broad all-files permissions.
 - Internet permission is not required for the local-first MVP. Add it only for a separately reviewed cloud, sync, upload, ads, crash reporting, or analytics feature.
+- WorkManager is used only for local background thumbnail generation in MVP. It must not be used for uploads, sync, analytics, or remote diagnostics without a separate privacy review.
 
 ## Backup
 

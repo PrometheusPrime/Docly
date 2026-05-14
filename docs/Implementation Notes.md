@@ -927,3 +927,29 @@ Validation:
 - `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:assembleDebug :app:assembleDebugAndroidTest --console=plain` completed with `BUILD SUCCESSFUL in 28m 46s`.
 - `adb shell am instrument -w -r com.docly.app.test/com.docly.app.HiltTestRunner` completed on `TECNO KL5 - 14` with `OK (61 tests)`.
 - Physical-device scanner smoke tests were not run in this environment.
+
+## 2026-05-14 - Phase 9 Release Hardening
+
+Scope:
+
+- Completed the local-first release hardening pass for the active MVP roadmap.
+- Bumped the internal release candidate metadata to `docly.versionCode=31` and `docly.versionName=0.31.0`.
+- Kept release signing optional through the existing `DOCLY_RELEASE_STORE_FILE`, `DOCLY_RELEASE_STORE_PASSWORD`, `DOCLY_RELEASE_KEY_ALIAS`, and `DOCLY_RELEASE_KEY_PASSWORD` Gradle properties or environment variables.
+- Removed WorkManager's default AndroidX Startup initializer from the merged manifest so `DoclyApplication` provides the Hilt-backed `HiltWorkerFactory` for `DocumentThumbnailWorker`.
+- Updated privacy and release checklist documentation to justify WorkManager scheduler permissions for local thumbnail generation and preserve the no-network MVP release posture.
+
+Implementation decisions:
+
+- WorkManager remains in the release manifest for local thumbnail generation only; it is not a network, upload, sync, analytics, or remote diagnostics path.
+- `android.permission.INTERNET` and `android.permission.ACCESS_NETWORK_STATE` remain explicitly removed through manifest merger rules.
+- Backup remains disabled with explicit full-backup and data-extraction exclusions for app-private data.
+- No Kotlin/domain/UI API, Room schema, navigation route, repository contract, or user-facing workflow change was added.
+
+Validation:
+
+- Focused hardening gate: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:ktlintCheck :app:testDebugUnitTest :app:processReleaseMainManifest --console=plain` completed with `BUILD SUCCESSFUL in 5m 53s`.
+- The regenerated merged release manifest reports `versionCode=31`, `versionName=0.31.0`, `android:allowBackup="false"`, `android.permission.CAMERA`, optional `android.hardware.camera.any`, WorkManager scheduler permissions, the app-local dynamic receiver permission, and the existing `FileProvider`.
+- The regenerated merged release manifest does not contain `INTERNET`, `ACCESS_NETWORK_STATE`, broad storage/media permissions, or `androidx.work.WorkManagerInitializer`.
+- Full release assembly: `JAVA_HOME=/usr/lib/jvm/java-26-openjdk ./gradlew --no-daemon --max-workers=1 :app:assembleRelease --console=plain` completed with `BUILD SUCCESSFUL in 7m 37s`.
+- The unsigned release artifact was generated at `app/build/outputs/apk/release/app-release-unsigned.apk`; `output-metadata.json` reports `versionCode` 31 and `versionName` `0.31.0`.
+- `adb devices` reported attached device `1268015548000502`, but signed release install and physical-device smoke were not run because no `DOCLY_RELEASE_*` signing values were configured and no signed `app-release.apk` was produced.

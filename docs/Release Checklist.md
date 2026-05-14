@@ -47,9 +47,11 @@ Inspect the merged release manifest.
 Expected for local-first MVP:
 
 - `android.permission.CAMERA`
+- WorkManager scheduler permissions for local thumbnail generation: `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, and `FOREGROUND_SERVICE`
 - Optional camera hardware declaration with `required=false`
 - `FileProvider` exported `false` with temporary URI grants
 - Backup behavior matching `docs/Privacy Notes.md`
+- `androidx.work.WorkManagerInitializer` absent so Hilt-backed workers use the app-provided `HiltWorkerFactory`
 
 Must be absent unless a separately reviewed feature requires it:
 
@@ -57,7 +59,7 @@ Must be absent unless a separately reviewed feature requires it:
 - Broad storage/media permissions
 - Contacts, location, microphone, SMS, phone, or notification permissions
 - `INTERNET` and `ACCESS_NETWORK_STATE` for local-only MVP builds
-- WorkManager scheduler permissions unless OCR, batch conversion, compression, or another background feature is included
+- Extra background scheduler permissions unless a local background feature is included and documented above
 
 ## Smoke Test
 
