@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.map
 class FakeDocumentRepository(documents: List<DoclyDocument> = emptyList()) : DocumentRepository {
     private val documentsFlow = MutableStateFlow(documents)
     var upsertError: AppResult.Error? = null
+    val thumbnailUpdates = mutableListOf<Pair<String, String>>()
     val documents: List<DoclyDocument>
         get() = documentsFlow.value
 
@@ -60,6 +61,14 @@ class FakeDocumentRepository(documents: List<DoclyDocument> = emptyList()) : Doc
     }
 
     override suspend fun updateLastOpened(documentId: String): AppResult<Unit> = AppResult.Success(Unit)
+
+    override suspend fun updateThumbnailPath(documentId: String, thumbnailPath: String): AppResult<Unit> {
+        thumbnailUpdates += documentId to thumbnailPath
+        documentsFlow.value = documentsFlow.value.map { document ->
+            if (document.id == documentId) document.copy(thumbnailPath = thumbnailPath) else document
+        }
+        return AppResult.Success(Unit)
+    }
 }
 
 class FakeDoclyStorageManager(private val rootDirectory: File) : DoclyStorageManager {

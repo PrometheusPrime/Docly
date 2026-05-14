@@ -1,7 +1,9 @@
 package com.docly.app.domain.repository
 
 import com.docly.app.core.image.ScanQualityAssessment
+import com.docly.app.core.pdf.PdfGenerationOptions
 import com.docly.app.core.result.AppResult
+import com.docly.app.domain.model.AppSettings
 import com.docly.app.domain.model.ConversionJob
 import com.docly.app.domain.model.ConversionRequest
 import com.docly.app.domain.model.ConversionResult
@@ -12,12 +14,16 @@ import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.ImportedRawImage
 import com.docly.app.domain.model.OrphanCleanupResult
 import com.docly.app.domain.model.PageCorners
+import com.docly.app.domain.model.PdfExportQuality
 import com.docly.app.domain.model.ProcessedPageResult
+import com.docly.app.domain.model.ReaderThemeMode
 import com.docly.app.domain.model.SavedDocument
 import com.docly.app.domain.model.ScanMode
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
+import com.docly.app.domain.model.StorageUsage
+import com.docly.app.domain.model.ThemeMode
 import com.docly.app.domain.model.toDoclyDocument
 import com.docly.app.domain.model.toSavedDocumentCompat
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +54,8 @@ interface DocumentRepository {
     suspend fun deleteDocument(documentId: String): AppResult<Unit>
     suspend fun toggleFavorite(documentId: String, isFavorite: Boolean): AppResult<Unit>
     suspend fun updateLastOpened(documentId: String): AppResult<Unit>
+    suspend fun updateThumbnailPath(documentId: String, thumbnailPath: String): AppResult<Unit> =
+        AppResult.Success(Unit)
 
     @Deprecated("Use observeDocuments.")
     fun observeSavedDocuments(): Flow<List<SavedDocument>> = observeDocuments().map { documents ->
@@ -103,6 +111,12 @@ interface ImageProcessingRepository {
 
 interface PdfRepository {
     suspend fun createPdf(pageImagePaths: List<String>, outputPdfPath: String): AppResult<String>
+
+    suspend fun createPdf(
+        pageImagePaths: List<String>,
+        outputPdfPath: String,
+        options: PdfGenerationOptions = PdfGenerationOptions()
+    ): AppResult<String> = createPdf(pageImagePaths = pageImagePaths, outputPdfPath = outputPdfPath)
 }
 
 interface DevicePhotoRepository {
@@ -129,6 +143,27 @@ interface FileRepository {
 
 interface CleanupRepository {
     suspend fun cleanOrphanedFiles(): AppResult<OrphanCleanupResult>
+}
+
+interface SettingsRepository {
+    val settings: Flow<AppSettings>
+    fun observeStorageUsage(): Flow<StorageUsage>
+    suspend fun getSettings(): AppResult<AppSettings>
+    suspend fun updateThemeMode(themeMode: ThemeMode): AppResult<Unit>
+    suspend fun updateDynamicColorEnabled(enabled: Boolean): AppResult<Unit>
+    suspend fun updateDefaultScanMode(scanMode: ScanMode): AppResult<Unit>
+    suspend fun updateAutoCaptureEnabled(enabled: Boolean): AppResult<Unit>
+    suspend fun updateReaderTextSizeSp(textSizeSp: Float): AppResult<Unit>
+    suspend fun updateReaderThemeMode(readerThemeMode: ReaderThemeMode): AppResult<Unit>
+    suspend fun updateDefaultPdfQuality(quality: PdfExportQuality): AppResult<Unit>
+    suspend fun clearCache(): AppResult<Unit>
+}
+
+interface DocumentThumbnailScheduler {
+    fun schedule(document: DoclyDocument)
+    fun scheduleMissingThumbnails(documents: List<DoclyDocument>) {
+        documents.forEach(::schedule)
+    }
 }
 
 object StorageReserveBytes {

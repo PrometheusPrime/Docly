@@ -16,7 +16,14 @@ class DefaultXlsxReaderEngine @Inject constructor(private val dispatcherProvider
     XlsxReaderEngine {
     override suspend fun open(fileRef: FileRef): AppResult<WorkbookDocument> = withContext(dispatcherProvider.io) {
         readerResult {
-            ZipFile(fileRef.requireInternalFile()).use { zipFile ->
+            val file = fileRef.requireInternalFile()
+            if (file.length() > MAX_SIMPLIFIED_XLSX_BYTES) {
+                throw ReaderFailure(
+                    message = "This XLSX is too large for simplified reading in this phase.",
+                    category = AppErrorCategory.VALIDATION
+                )
+            }
+            ZipFile(file).use { zipFile ->
                 WorkbookDocument(
                     sheets = zipFile.readSheetRefs().mapIndexed { index, sheet ->
                         XlsxSheetInfo(name = sheet.name, index = index)
@@ -37,7 +44,14 @@ class DefaultXlsxReaderEngine @Inject constructor(private val dispatcherProvider
                 throw ReaderFailure("Invalid spreadsheet range.", AppErrorCategory.VALIDATION)
             }
 
-            ZipFile(fileRef.requireInternalFile()).use { zipFile ->
+            val file = fileRef.requireInternalFile()
+            if (file.length() > MAX_SIMPLIFIED_XLSX_BYTES) {
+                throw ReaderFailure(
+                    message = "This XLSX is too large for simplified reading in this phase.",
+                    category = AppErrorCategory.VALIDATION
+                )
+            }
+            ZipFile(file).use { zipFile ->
                 val sheets = zipFile.readSheetRefs()
                 val sheet = sheets.getOrNull(sheetIndex)
                     ?: throw ReaderFailure("Spreadsheet sheet was not found.", AppErrorCategory.VALIDATION)
@@ -250,3 +264,4 @@ private fun Element.attributeValue(localName: String): String? {
 private const val WORKBOOK_ENTRY = "xl/workbook.xml"
 private const val WORKBOOK_RELS_ENTRY = "xl/_rels/workbook.xml.rels"
 private const val SHARED_STRINGS_ENTRY = "xl/sharedStrings.xml"
+private const val MAX_SIMPLIFIED_XLSX_BYTES = 8L * 1024L * 1024L

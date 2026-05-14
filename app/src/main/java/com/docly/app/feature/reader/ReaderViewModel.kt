@@ -8,6 +8,7 @@ import com.docly.app.core.result.toUserMessage
 import com.docly.app.domain.capability.DocumentCapabilityResolver
 import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentType
+import com.docly.app.domain.model.ReaderThemeMode
 import com.docly.app.domain.usecase.library.GetDocumentUseCase
 import com.docly.app.domain.usecase.library.UpdateLastOpenedUseCase
 import com.docly.app.domain.usecase.reader.OpenPdfDocumentUseCase
@@ -18,6 +19,7 @@ import com.docly.app.domain.usecase.reader.ReadTextChunkUseCase
 import com.docly.app.domain.usecase.reader.ReadXlsxRowsUseCase
 import com.docly.app.domain.usecase.reader.RenderMarkdownUseCase
 import com.docly.app.domain.usecase.reader.RenderPdfPageUseCase
+import com.docly.app.domain.usecase.settings.ObserveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,7 +41,8 @@ class ReaderViewModel @Inject constructor(
     private val readHtmlUseCase: ReadHtmlUseCase,
     private val parseDocxUseCase: ParseDocxUseCase,
     private val openXlsxUseCase: OpenXlsxUseCase,
-    private val readXlsxRowsUseCase: ReadXlsxRowsUseCase
+    private val readXlsxRowsUseCase: ReadXlsxRowsUseCase,
+    private val observeSettingsUseCase: ObserveSettingsUseCase
 ) : ViewModel() {
     private val documentId: String = savedStateHandle.get<String>(DOCUMENT_ID_KEY).orEmpty()
     private val _uiState = MutableStateFlow(ReaderUiState(documentId = documentId))
@@ -47,6 +50,10 @@ class ReaderViewModel @Inject constructor(
 
     private var hasStarted = false
     private var currentDocument: DoclyDocument? = null
+
+    init {
+        observeDefaults()
+    }
 
     fun onEvent(event: ReaderUiEvent) {
         when (event) {
@@ -84,6 +91,19 @@ class ReaderViewModel @Inject constructor(
         if (hasStarted) return
         hasStarted = true
         loadDocument()
+    }
+
+    private fun observeDefaults() {
+        viewModelScope.launch {
+            observeSettingsUseCase().collect { settings ->
+                _uiState.update { state ->
+                    state.copy(
+                        textSizeSp = settings.readerTextSizeSp,
+                        useDarkReaderTheme = settings.readerThemeMode == ReaderThemeMode.DARK
+                    )
+                }
+            }
+        }
     }
 
     private fun loadDocument() {

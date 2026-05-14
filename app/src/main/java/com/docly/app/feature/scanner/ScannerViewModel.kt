@@ -23,6 +23,7 @@ import com.docly.app.domain.usecase.scanner.ImportScannedPagesUseCase
 import com.docly.app.domain.usecase.session.AbandonScanSessionUseCase
 import com.docly.app.domain.usecase.session.CleanOrphanedFilesUseCase
 import com.docly.app.domain.usecase.session.GetRecoverableSessionUseCase
+import com.docly.app.domain.usecase.settings.ObserveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -43,6 +44,7 @@ class ScannerViewModel @Inject constructor(
     private val getRecoverableSessionUseCase: GetRecoverableSessionUseCase,
     private val abandonScanSessionUseCase: AbandonScanSessionUseCase,
     private val cleanOrphanedFilesUseCase: CleanOrphanedFilesUseCase,
+    private val observeSettingsUseCase: ObserveSettingsUseCase,
     private val diagnosticsRepository: DiagnosticsRepository,
     private val idProvider: IdProvider,
     private val timeProvider: TimeProvider
@@ -58,6 +60,10 @@ class ScannerViewModel @Inject constructor(
     private var hasStarted = false
     private val autoCaptureTracker = AutoCaptureReadinessTracker()
     private var lastAutoCaptureSuppression: String? = null
+
+    init {
+        observeDefaults()
+    }
 
     fun onEvent(event: ScannerUiEvent) {
         when (event) {
@@ -187,6 +193,23 @@ class ScannerViewModel @Inject constructor(
                             recoveryPrompt = result.data?.toPrompt(),
                             isCheckingRecovery = false,
                             errorMessage = null
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeDefaults() {
+        viewModelScope.launch {
+            observeSettingsUseCase().collect { settings ->
+                _uiState.update { state ->
+                    if (!state.sessionId.isNullOrBlank() || state.hasRecoveryPrompt) {
+                        state
+                    } else {
+                        state.copy(
+                            scanMode = settings.defaultScanMode,
+                            isAutoCaptureEnabled = settings.autoCaptureEnabled
                         )
                     }
                 }

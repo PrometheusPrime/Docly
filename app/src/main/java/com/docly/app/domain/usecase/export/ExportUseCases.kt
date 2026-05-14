@@ -1,6 +1,8 @@
 package com.docly.app.domain.usecase.export
 
 import com.docly.app.core.common.IdProvider
+import com.docly.app.core.pdf.PdfGenerationOptions
+import com.docly.app.core.pdf.PdfRenderQuality
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.time.TimeProvider
@@ -11,6 +13,7 @@ import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.model.OcrStatus
 import com.docly.app.domain.model.PageReviewStatus
+import com.docly.app.domain.model.PdfExportQuality
 import com.docly.app.domain.model.ScanSession
 import com.docly.app.domain.model.ScanSessionStatus
 import com.docly.app.domain.model.ScannedPage
@@ -21,6 +24,7 @@ import com.docly.app.domain.repository.PdfRepository
 import com.docly.app.domain.repository.StorageReserveBytes
 import com.docly.app.domain.usecase.session.GetScanSessionUseCase
 import com.docly.app.domain.usecase.session.UpdateScanSessionStatusUseCase
+import com.docly.app.domain.usecase.settings.GetSettingsUseCase
 import java.io.File
 import java.util.Calendar
 import java.util.Locale
@@ -68,7 +72,8 @@ class ValidateMetadataUseCase @Inject constructor(private val timeProvider: Time
 
 class GeneratePdfUseCase @Inject constructor(
     private val pdfRepository: PdfRepository,
-    private val fileRepository: FileRepository
+    private val fileRepository: FileRepository,
+    private val getSettingsUseCase: GetSettingsUseCase
 ) {
     suspend operator fun invoke(fileName: String, pages: List<ScannedPage>): AppResult<String> {
         if (pages.isEmpty()) {
@@ -84,9 +89,19 @@ class GeneratePdfUseCase @Inject constructor(
         }
 
         val pageImagePaths = pages.map { page -> page.processedImagePath ?: page.originalImagePath }
+        val settings = when (val settingsResult = getSettingsUseCase()) {
+            is AppResult.Error -> null
+            is AppResult.Success -> settingsResult.data
+        }
         return pdfRepository.createPdf(
             pageImagePaths = pageImagePaths,
-            outputPdfPath = fileRepository.createPdfPath(fileName)
+            outputPdfPath = fileRepository.createPdfPath(fileName),
+            options = PdfGenerationOptions(
+                renderQuality = when (settings?.defaultPdfQuality ?: PdfExportQuality.HIGH) {
+                    PdfExportQuality.HIGH -> PdfRenderQuality.High
+                    PdfExportQuality.MEDIUM -> PdfRenderQuality.Medium
+                }
+            )
         )
     }
 }

@@ -406,9 +406,7 @@ private fun DoclyDocument.editActionLabel(): String = if (type == DocumentType.P
 @Composable
 private fun LibraryDocumentThumbnail(document: DoclyDocument) {
     DoclyImageThumbnail(
-        imagePath = document.thumbnailPath ?: (document.fileRef as? FileRef.InternalFile)
-            ?.path
-            ?.takeIf { document.type == DocumentType.IMAGE },
+        imagePath = document.thumbnailPath,
         contentDescription = "${document.name} thumbnail",
         modifier = Modifier.size(width = 72.dp, height = 96.dp),
         testTag = DoclyTestTags.LIBRARY_DOCUMENT_THUMBNAIL

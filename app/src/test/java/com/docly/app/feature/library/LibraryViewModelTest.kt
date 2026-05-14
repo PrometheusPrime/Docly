@@ -8,6 +8,7 @@ import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.FileRef
 import com.docly.app.domain.reader.DocumentOpenResolver
 import com.docly.app.domain.repository.DocumentRepository
+import com.docly.app.domain.repository.DocumentThumbnailScheduler
 import com.docly.app.domain.usecase.library.DeleteDocumentUseCase
 import com.docly.app.domain.usecase.library.ImportDocumentUseCase
 import com.docly.app.domain.usecase.library.ObserveDocumentsUseCase
@@ -52,6 +53,16 @@ class LibraryViewModelTest {
         assertEquals(listOf(first, second), viewModel.uiState.value.documents)
         assertEquals(2, viewModel.uiState.value.totalDocumentCount)
         assertFalse(viewModel.uiState.value.isLoading)
+    }
+
+    @Test
+    fun observedDocumentsScheduleMissingThumbnails() = runTest {
+        val scheduler = FakeDocumentThumbnailScheduler()
+        val image = sampleDocument(id = "image", type = DocumentType.IMAGE)
+        viewModel(documents = listOf(image), documentThumbnailScheduler = scheduler)
+        advanceUntilIdle()
+
+        assertEquals(listOf(image.id), scheduler.scheduledDocumentIds)
     }
 
     @Test
@@ -164,7 +175,8 @@ class LibraryViewModelTest {
 
     private fun viewModel(
         documents: List<DoclyDocument> = emptyList(),
-        repository: FakeDocumentRepository = FakeDocumentRepository(documents)
+        repository: FakeDocumentRepository = FakeDocumentRepository(documents),
+        documentThumbnailScheduler: DocumentThumbnailScheduler = FakeDocumentThumbnailScheduler()
     ): LibraryViewModel = LibraryViewModel(
         observeDocumentsUseCase = ObserveDocumentsUseCase(repository),
         searchDocumentsUseCase = SearchDocumentsUseCase(repository),
@@ -173,7 +185,8 @@ class LibraryViewModelTest {
         deleteDocumentUseCase = DeleteDocumentUseCase(repository),
         toggleFavoriteDocumentUseCase = ToggleFavoriteDocumentUseCase(repository),
         updateLastOpenedUseCase = UpdateLastOpenedUseCase(repository),
-        documentOpenResolver = DocumentOpenResolver(DocumentCapabilityResolver())
+        documentOpenResolver = DocumentOpenResolver(DocumentCapabilityResolver()),
+        documentThumbnailScheduler = documentThumbnailScheduler
     )
 
     private fun sampleDocument(
@@ -261,6 +274,20 @@ class LibraryViewModelTest {
         override suspend fun updateLastOpened(documentId: String): AppResult<Unit> {
             lastOpenedIds += documentId
             return AppResult.Success(Unit)
+        }
+    }
+
+    private class FakeDocumentThumbnailScheduler : DocumentThumbnailScheduler {
+        val scheduledDocumentIds = mutableListOf<String>()
+
+        override fun schedule(document: DoclyDocument) {
+            val supportsThumbnail = document.type in setOf(
+                DocumentType.PDF,
+                DocumentType.IMAGE
+            )
+            if (document.thumbnailPath.isNullOrBlank() && supportsThumbnail) {
+                scheduledDocumentIds += document.id
+            }
         }
     }
 

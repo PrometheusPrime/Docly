@@ -72,6 +72,49 @@ enum class ViewMode {
     GRID
 }
 
+data class AppSettings(
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val dynamicColorEnabled: Boolean = false,
+    val defaultScanMode: ScanMode = ScanMode.DOCUMENT,
+    val autoCaptureEnabled: Boolean = false,
+    val readerTextSizeSp: Float = DEFAULT_READER_TEXT_SIZE_SP,
+    val readerThemeMode: ReaderThemeMode = ReaderThemeMode.LIGHT,
+    val defaultPdfQuality: PdfExportQuality = PdfExportQuality.HIGH
+) {
+    companion object {
+        const val DEFAULT_READER_TEXT_SIZE_SP = 16f
+        const val MIN_READER_TEXT_SIZE_SP = 12f
+        const val MAX_READER_TEXT_SIZE_SP = 28f
+    }
+}
+
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK
+}
+
+enum class ReaderThemeMode {
+    LIGHT,
+    DARK
+}
+
+enum class PdfExportQuality {
+    HIGH,
+    MEDIUM
+}
+
+data class StorageUsage(
+    val documentsBytes: Long = 0L,
+    val thumbnailsBytes: Long = 0L,
+    val tempBytes: Long = 0L,
+    val exportsBytes: Long = 0L,
+    val cacheBytes: Long = 0L
+) {
+    val totalBytes: Long
+        get() = documentsBytes + thumbnailsBytes + tempBytes + exportsBytes + cacheBytes
+}
+
 data class Folder(val id: String, val name: String, val parentId: String?, val createdAt: Long, val updatedAt: Long)
 
 data class RecentDocument(val documentId: String, val openedAt: Long)

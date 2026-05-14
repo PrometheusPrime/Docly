@@ -41,6 +41,9 @@ interface DocumentDao {
     @Query("UPDATE documents SET lastOpenedAt = :openedAt, updatedAt = :openedAt WHERE id = :documentId")
     suspend fun updateLastOpened(documentId: String, openedAt: Long)
 
+    @Query("UPDATE documents SET thumbnailPath = :thumbnailPath WHERE id = :documentId")
+    suspend fun updateThumbnailPath(documentId: String, thumbnailPath: String)
+
     @Update
     suspend fun update(document: DocumentEntity)
 

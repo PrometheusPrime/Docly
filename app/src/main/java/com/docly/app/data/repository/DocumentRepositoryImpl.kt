@@ -122,6 +122,17 @@ class DocumentRepositoryImpl @Inject constructor(
         documentDao.updateLastOpened(documentId = documentId, openedAt = timeProvider.now())
     }
 
+    override suspend fun updateThumbnailPath(documentId: String, thumbnailPath: String): AppResult<Unit> =
+        repositoryResult(dispatcherProvider) {
+            if (thumbnailPath.isBlank()) {
+                throw RepositoryFailure(
+                    message = "Thumbnail path is required.",
+                    category = AppErrorCategory.VALIDATION
+                )
+            }
+            documentDao.updateThumbnailPath(documentId = documentId, thumbnailPath = thumbnailPath)
+        }
+
     private fun String.toDisplayName(type: DocumentType): String {
         val trimmedName = trim().ifBlank { "Document" }
         return if (type == DocumentType.PDF) trimmedName.removeSuffix(".pdf").removeSuffix(".PDF") else trimmedName

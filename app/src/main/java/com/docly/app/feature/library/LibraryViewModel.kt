@@ -11,6 +11,7 @@ import com.docly.app.domain.model.SortMode
 import com.docly.app.domain.model.ViewMode
 import com.docly.app.domain.reader.DocumentOpenResolver
 import com.docly.app.domain.reader.DocumentOpenTarget
+import com.docly.app.domain.repository.DocumentThumbnailScheduler
 import com.docly.app.domain.usecase.library.DeleteDocumentUseCase
 import com.docly.app.domain.usecase.library.ImportDocumentUseCase
 import com.docly.app.domain.usecase.library.ObserveDocumentsUseCase
@@ -40,7 +41,8 @@ class LibraryViewModel @Inject constructor(
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
     private val toggleFavoriteDocumentUseCase: ToggleFavoriteDocumentUseCase,
     private val updateLastOpenedUseCase: UpdateLastOpenedUseCase,
-    private val documentOpenResolver: DocumentOpenResolver
+    private val documentOpenResolver: DocumentOpenResolver,
+    private val documentThumbnailScheduler: DocumentThumbnailScheduler
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -96,6 +98,7 @@ class LibraryViewModel @Inject constructor(
                 }
                 .collect { documents ->
                     allDocuments = documents
+                    documentThumbnailScheduler.scheduleMissingThumbnails(documents)
                     _uiState.update { state ->
                         state.copy(
                             documents = documents.applyUiFilters(state),

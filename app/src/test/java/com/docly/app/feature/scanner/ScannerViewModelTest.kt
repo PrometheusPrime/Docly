@@ -10,8 +10,10 @@ import com.docly.app.core.image.ScanQualityIssue
 import com.docly.app.core.result.AppErrorCategory
 import com.docly.app.core.result.AppResult
 import com.docly.app.core.result.LOW_STORAGE_USER_MESSAGE
+import com.docly.app.core.testing.FakeSettingsRepository
 import com.docly.app.core.testing.NoOpDiagnosticsRepository
 import com.docly.app.core.time.TimeProvider
+import com.docly.app.domain.model.AppSettings
 import com.docly.app.domain.model.DocumentMetadata
 import com.docly.app.domain.model.ImportedRawImage
 import com.docly.app.domain.model.OrphanCleanupResult
@@ -36,6 +38,7 @@ import com.docly.app.domain.usecase.scanner.ImportScannedPagesUseCase
 import com.docly.app.domain.usecase.session.AbandonScanSessionUseCase
 import com.docly.app.domain.usecase.session.CleanOrphanedFilesUseCase
 import com.docly.app.domain.usecase.session.GetRecoverableSessionUseCase
+import com.docly.app.domain.usecase.settings.ObserveSettingsUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -116,6 +119,20 @@ class ScannerViewModelTest {
 
         assertNull(viewModel.uiState.value.previewBoundary)
         assertEquals(previewBoundary.corners, viewModel.uiState.value.detectedCorners)
+    }
+
+    @Test
+    fun scannerDefaultsComeFromSettingsForNewWorkflow() = runTest {
+        val viewModel = viewModel(
+            settingsRepository = FakeSettingsRepository(
+                AppSettings(defaultScanMode = ScanMode.COLOR, autoCaptureEnabled = true)
+            )
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(ScanMode.COLOR, viewModel.uiState.value.scanMode)
+        assertTrue(viewModel.uiState.value.isAutoCaptureEnabled)
     }
 
     @Test
@@ -598,7 +615,8 @@ class ScannerViewModelTest {
             FakeScanRepository()
         ),
         abandonScanSessionUseCase: AbandonScanSessionUseCase = AbandonScanSessionUseCase(FakeScanRepository()),
-        cleanOrphanedFilesUseCase: CleanOrphanedFilesUseCase = CleanOrphanedFilesUseCase(FakeCleanupRepository())
+        cleanOrphanedFilesUseCase: CleanOrphanedFilesUseCase = CleanOrphanedFilesUseCase(FakeCleanupRepository()),
+        settingsRepository: FakeSettingsRepository = FakeSettingsRepository()
     ): ScannerViewModel = ScannerViewModel(
         savedStateHandle = if (sessionId == null) {
             SavedStateHandle()
@@ -611,6 +629,7 @@ class ScannerViewModelTest {
         getRecoverableSessionUseCase = getRecoverableSessionUseCase,
         abandonScanSessionUseCase = abandonScanSessionUseCase,
         cleanOrphanedFilesUseCase = cleanOrphanedFilesUseCase,
+        observeSettingsUseCase = ObserveSettingsUseCase(settingsRepository),
         diagnosticsRepository = NoOpDiagnosticsRepository(),
         idProvider = SequenceIdProvider(listOf("diagnostic-1", "diagnostic-2", "diagnostic-3")),
         timeProvider = FixedTimeProvider(1L)

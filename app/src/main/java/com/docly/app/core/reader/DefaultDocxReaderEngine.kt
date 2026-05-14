@@ -15,6 +15,12 @@ class DefaultDocxReaderEngine @Inject constructor(private val dispatcherProvider
     override suspend fun parse(fileRef: FileRef): AppResult<ExtractedDocument> = withContext(dispatcherProvider.io) {
         readerResult {
             val file = fileRef.requireInternalFile()
+            if (file.length() > MAX_SIMPLIFIED_DOCX_BYTES) {
+                throw ReaderFailure(
+                    message = "This DOCX is too large for simplified reading in this phase.",
+                    category = AppErrorCategory.VALIDATION
+                )
+            }
             ZipFile(file).use { zipFile ->
                 val entry = zipFile.getEntry(DOCUMENT_XML_ENTRY)
                     ?: throw ReaderFailure("DOCX document content was not found.", AppErrorCategory.VALIDATION)
@@ -83,6 +89,7 @@ class DefaultDocxReaderEngine @Inject constructor(private val dispatcherProvider
 
     private companion object {
         const val DOCUMENT_XML_ENTRY = "word/document.xml"
+        const val MAX_SIMPLIFIED_DOCX_BYTES = 8L * 1024L * 1024L
     }
 }
 

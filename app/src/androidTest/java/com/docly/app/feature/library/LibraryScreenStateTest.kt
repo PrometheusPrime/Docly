@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToIndex
 import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentSource
 import com.docly.app.domain.model.DocumentType
@@ -56,9 +57,32 @@ class LibraryScreenStateTest {
         composeRule.onNodeWithTag(DoclyTestTags.LIBRARY_DELETE_ACTION).assertIsDisplayed()
     }
 
-    private fun document(): DoclyDocument = DoclyDocument(
-        id = "document-id",
-        name = "Paper",
+    @Test
+    fun libraryScrollsToHundredthDocument() {
+        val documents = (1..100).map { index ->
+            document(id = "document-$index", name = "Document $index")
+        }
+
+        composeRule.setContent {
+            DoclyTheme {
+                LibraryScreen(
+                    uiState = LibraryUiState(
+                        totalDocumentCount = documents.size,
+                        documents = documents
+                    ),
+                    onEvent = {},
+                    onStartScanner = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(DoclyTestTags.LIBRARY_DOCUMENT_LIST).performScrollToIndex(101)
+        composeRule.onNodeWithText("Document 100").assertIsDisplayed()
+    }
+
+    private fun document(id: String = "document-id", name: String = "Paper"): DoclyDocument = DoclyDocument(
+        id = id,
+        name = name,
         type = DocumentType.PDF,
         mimeType = "application/pdf",
         fileRef = FileRef.InternalFile("/documents/paper.pdf"),

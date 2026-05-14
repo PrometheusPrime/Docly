@@ -12,6 +12,7 @@ import com.docly.app.domain.model.FileRef
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.sqrt
 import kotlinx.coroutines.withContext
 
 class AndroidPdfReaderEngine @Inject constructor(
@@ -34,7 +35,7 @@ class AndroidPdfReaderEngine @Inject constructor(
         zoom: Float
     ): AppResult<RenderedPdfPage> = withContext(dispatcherProvider.io) {
         readerResult {
-            val targetWidth = widthPx.coerceAtLeast(MIN_RENDER_WIDTH_PX)
+            val targetWidth = widthPx.coerceIn(MIN_RENDER_WIDTH_PX, MAX_TARGET_WIDTH_PX)
             val safeZoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
             val cacheFile = cacheFile(
                 documentId = documentId,
@@ -57,11 +58,20 @@ class AndroidPdfReaderEngine @Inject constructor(
                 }
 
                 renderer.openPage(pageIndex).use { page ->
-                    val renderWidth = (targetWidth * safeZoom).toInt().coerceAtLeast(MIN_RENDER_WIDTH_PX)
-                    val renderHeight = ((renderWidth.toFloat() / page.width.toFloat()) * page.height.toFloat())
-                        .toInt()
-                        .coerceAtLeast(1)
-                    val bitmap = Bitmap.createBitmap(renderWidth, renderHeight, Bitmap.Config.ARGB_8888)
+                    val pageSize = cappedRenderSize(
+                        requestedWidth = (targetWidth * safeZoom).toInt().coerceAtLeast(MIN_RENDER_WIDTH_PX),
+                        pageWidth = page.width,
+                        pageHeight = page.height
+                    )
+                    val bitmap = try {
+                        Bitmap.createBitmap(pageSize.width, pageSize.height, Bitmap.Config.ARGB_8888)
+                    } catch (outOfMemory: OutOfMemoryError) {
+                        throw ReaderFailure(
+                            message = "This PDF page is too large to render on this device.",
+                            category = AppErrorCategory.PROCESSING,
+                            cause = outOfMemory
+                        )
+                    }
                     bitmap.eraseColor(Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     cacheFile.parentFile?.mkdirs()
@@ -71,8 +81,8 @@ class AndroidPdfReaderEngine @Inject constructor(
                     bitmap.recycle()
                     RenderedPdfPage(
                         pageIndex = pageIndex,
-                        width = renderWidth,
-                        height = renderHeight,
+                        width = pageSize.width,
+                        height = pageSize.height,
                         imagePath = cacheFile.absolutePath
                     )
                 }
@@ -105,9 +115,31 @@ class AndroidPdfReaderEngine @Inject constructor(
         return File(File(context.cacheDir, PDF_CACHE_DIRECTORY), cacheName)
     }
 
+    private fun cappedRenderSize(requestedWidth: Int, pageWidth: Int, pageHeight: Int): RenderSize {
+        val initialWidth = requestedWidth.coerceAtMost(MAX_RENDER_WIDTH_PX)
+        val initialHeight = ((initialWidth.toFloat() / pageWidth.toFloat()) * pageHeight.toFloat())
+            .toInt()
+            .coerceAtLeast(1)
+        val initialPixels = initialWidth.toLong() * initialHeight.toLong()
+        if (initialPixels <= MAX_RENDER_PIXELS) {
+            return RenderSize(width = initialWidth, height = initialHeight)
+        }
+
+        val scale = sqrt(MAX_RENDER_PIXELS.toDouble() / initialPixels.toDouble()).coerceAtMost(1.0)
+        return RenderSize(
+            width = (initialWidth * scale).toInt().coerceAtLeast(MIN_RENDER_WIDTH_PX),
+            height = (initialHeight * scale).toInt().coerceAtLeast(1)
+        )
+    }
+
+    private data class RenderSize(val width: Int, val height: Int)
+
     private companion object {
         const val PDF_CACHE_DIRECTORY = "reader/pdf"
         const val MIN_RENDER_WIDTH_PX = 320
+        const val MAX_TARGET_WIDTH_PX = 1600
+        const val MAX_RENDER_WIDTH_PX = 2400
+        const val MAX_RENDER_PIXELS = 5_500_000L
         const val MIN_ZOOM = 0.75f
         const val MAX_ZOOM = 3f
     }

@@ -16,11 +16,14 @@ import com.docly.app.core.reader.XlsxReaderEngine
 import com.docly.app.core.reader.XlsxRowPage
 import com.docly.app.core.reader.XlsxSheetInfo
 import com.docly.app.core.result.AppResult
+import com.docly.app.core.testing.FakeSettingsRepository
 import com.docly.app.domain.capability.DocumentCapabilityResolver
+import com.docly.app.domain.model.AppSettings
 import com.docly.app.domain.model.DoclyDocument
 import com.docly.app.domain.model.DocumentSource
 import com.docly.app.domain.model.DocumentType
 import com.docly.app.domain.model.FileRef
+import com.docly.app.domain.model.ReaderThemeMode
 import com.docly.app.domain.repository.DocumentRepository
 import com.docly.app.domain.usecase.library.GetDocumentUseCase
 import com.docly.app.domain.usecase.library.UpdateLastOpenedUseCase
@@ -32,6 +35,7 @@ import com.docly.app.domain.usecase.reader.ReadTextChunkUseCase
 import com.docly.app.domain.usecase.reader.ReadXlsxRowsUseCase
 import com.docly.app.domain.usecase.reader.RenderMarkdownUseCase
 import com.docly.app.domain.usecase.reader.RenderPdfPageUseCase
+import com.docly.app.domain.usecase.settings.ObserveSettingsUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -130,6 +134,20 @@ class ReaderViewModelTest {
         assertEquals(listOf(0 to 0, 1 to 0), xlsxEngine.rowRequests)
     }
 
+    @Test
+    fun readerDefaultsComeFromSettings() = runTest {
+        val viewModel = viewModel(
+            settingsRepository = FakeSettingsRepository(
+                AppSettings(readerTextSizeSp = 20f, readerThemeMode = ReaderThemeMode.DARK)
+            )
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(20f, viewModel.uiState.value.textSizeSp)
+        assertTrue(viewModel.uiState.value.useDarkReaderTheme)
+    }
+
     private fun viewModel(
         repository: FakeDocumentRepository = FakeDocumentRepository(document(type = DocumentType.TXT)),
         pdfReaderEngine: PdfReaderEngine = FakePdfReaderEngine(),
@@ -137,7 +155,8 @@ class ReaderViewModelTest {
         markdownReaderEngine: MarkdownReaderEngine = FakeMarkdownReaderEngine(),
         htmlReaderEngine: HtmlReaderEngine = FakeHtmlReaderEngine(),
         docxReaderEngine: DocxReaderEngine = FakeDocxReaderEngine(),
-        xlsxReaderEngine: XlsxReaderEngine = FakeXlsxReaderEngine()
+        xlsxReaderEngine: XlsxReaderEngine = FakeXlsxReaderEngine(),
+        settingsRepository: FakeSettingsRepository = FakeSettingsRepository()
     ): ReaderViewModel = ReaderViewModel(
         savedStateHandle = SavedStateHandle(mapOf("documentId" to "doc-id")),
         getDocumentUseCase = GetDocumentUseCase(repository),
@@ -150,7 +169,8 @@ class ReaderViewModelTest {
         readHtmlUseCase = ReadHtmlUseCase(htmlReaderEngine),
         parseDocxUseCase = ParseDocxUseCase(docxReaderEngine),
         openXlsxUseCase = OpenXlsxUseCase(xlsxReaderEngine),
-        readXlsxRowsUseCase = ReadXlsxRowsUseCase(xlsxReaderEngine)
+        readXlsxRowsUseCase = ReadXlsxRowsUseCase(xlsxReaderEngine),
+        observeSettingsUseCase = ObserveSettingsUseCase(settingsRepository)
     )
 
     private fun document(type: DocumentType): DoclyDocument = DoclyDocument(

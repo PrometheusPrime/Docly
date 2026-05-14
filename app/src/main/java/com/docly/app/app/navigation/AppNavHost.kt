@@ -51,6 +51,9 @@ import com.docly.app.feature.scanner.ScannerViewModel
 import com.docly.app.feature.scanreview.ScanReviewScreen
 import com.docly.app.feature.scanreview.ScanReviewUiEffect
 import com.docly.app.feature.scanreview.ScanReviewViewModel
+import com.docly.app.feature.settings.SettingsScreen
+import com.docly.app.feature.settings.SettingsUiEffect
+import com.docly.app.feature.settings.SettingsViewModel
 
 @Composable
 fun AppNavHost(
@@ -460,10 +463,22 @@ fun AppNavHost(
             )
         }
 
-        composable<SettingsRoute> {
-            PlaceholderScreen(
-                title = "Settings",
-                message = "Document defaults and appearance settings are planned for a later phase.",
+        composable<SettingsRoute> { backStackEntry ->
+            val viewModel = hiltViewModel<SettingsViewModel>(backStackEntry)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            LaunchedEffect(viewModel) {
+                viewModel.uiEffect.collect { effect ->
+                    when (effect) {
+                        is SettingsUiEffect.ShowToast -> {
+                            Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            SettingsScreen(
+                uiState = uiState,
+                onEvent = viewModel::onEvent,
                 onNavigateBack = navController::popBackStack
             )
         }
